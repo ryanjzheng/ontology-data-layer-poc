@@ -86,12 +86,31 @@ class AcceptanceDemo:
         )
         return int(value or 0)
 
+    def reset_prior_demo_state(
+        self, edited_id: str, source_delete_id: str, *, editor: str
+    ) -> None:
+        changed = False
+        for employee_id in (edited_id, source_delete_id):
+            try:
+                self.actions.undelete_object(employee_id, editor=editor)
+                changed = True
+            except ValueError:
+                pass
+        try:
+            self.actions.revert_property(edited_id, "salary", editor=editor)
+            changed = True
+        except ValueError:
+            pass
+        if changed:
+            self.run_bridge()
+
     def run(self) -> dict[str, Any]:
         editor = "ontology-poc-demo"
         edited_id = "emp-00001"
         source_delete_id = "emp-00002"
         edited_salary = Decimal("250000.00")
 
+        self.reset_prior_demo_state(edited_id, source_delete_id, editor=editor)
         base_before = self.uc_salary("employee_base", edited_id)
         if base_before is None:
             raise AssertionError("Run the ETL simulator before the acceptance demo")
