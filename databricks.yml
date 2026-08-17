@@ -1,0 +1,26 @@
+bundle:
+  name: ontology-data-layer-poc
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: serverless_stable_vfpvf8_catalog
+  schema:
+    default: object_layer
+  lakebase_endpoint:
+    default: projects/ontology-poc/branches/production/endpoints/primary
+  lakebase_database:
+    default: ontology_poc
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      host: https://fevm-serverless-stable-vfpvf8.cloud.databricks.com
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: serverless_stable_vfpvf8_catalog
+      schema: object_layer

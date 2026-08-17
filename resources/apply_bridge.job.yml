@@ -1,0 +1,30 @@
+resources:
+  jobs:
+    apply_bridge:
+      name: "[${bundle.target}] ontology-poc Lakebase apply bridge"
+      max_concurrent_runs: 1
+      schedule:
+        quartz_cron_expression: "0 0/2 * * * ?"
+        timezone_id: UTC
+        pause_status: UNPAUSED
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: lakebase_endpoint
+          default: ${var.lakebase_endpoint}
+        - name: lakebase_database
+          default: ${var.lakebase_database}
+      environments:
+        - environment_key: lakebase
+          spec:
+            client: "4"
+            dependencies:
+              - "psycopg[binary]>=3.2"
+              - "databricks-sdk>=0.81.0"
+      tasks:
+        - task_key: merge_employee_writes
+          environment_key: lakebase
+          notebook_task:
+            notebook_path: ../src/notebooks/apply_bridge.py

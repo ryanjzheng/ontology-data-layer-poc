@@ -12,7 +12,7 @@
 
 We are replicating Palantir Foundry's **Object Type data layer** on Databricks. The single hardest thing Foundry gets right is the **strict separation of upstream source data from user edits**, reconciled at read time with edits taking precedence. That separation is *the* reason "just use Lakebase" is wrong.
 
-**The pattern (canonical):** Upstream owns a UC **BASE** table (read-only from the app). The app writes user edits **only** to a separate change log. The reconciled "current truth" is a UC **GOLD/MV** = `BASE ⊕ APP_CHANGES`, with edits winning per primary key. Lakebase is the **hot OLTP overlay** that makes the interactive app fast; it is *not* the source of truth.
+**The pattern (canonical):** Upstream owns a UC **BASE** table (read-only from the app). The app writes user edits **only** to a separate change log. The reconciled "current truth" is a UC **GOLD/MV** = `BASE ⊕ APP_CHANGES`, with edits winning per primary key. Lakebase is the **hot OLTP overlay** that makes the interactive app fast; it is *not* the source of truth. The app can also **create net-new objects** upstream never had, so reconciliation is a **FULL OUTER** merge (`COALESCE` per column, edit wins). An edit is undone by **reverting** the override (falls back to BASE) — distinct from **deleting** the object (a tombstone that hides it).
 
 ```
 Upstream ETL ─► UC BASE ──(Synced Continuous)──► Lakebase *_sync (read-only mirror)
@@ -78,10 +78,12 @@ We adopt the canonical pattern from **Doc 2 ("UC ↔ Lakebase Hybrid Architectur
 | ⑤ | Lakebase `*_write` → **UC `*_app_changes`** | APPLY CHANGES into a *new* app-owned Delta table — **never BASE** |
 | ⑥ | BASE ⊕ APP_CHANGES → **UC MV / GOLD** | Reconciled latest view for BI / SQL |
 
-### Reconciliation precedence (GOLD/MV = Palantir's merge logic)
-1. If APP_CHANGES row has tombstone (`is_deleted = true`) → hide/delete in GOLD.
-2. Else if an APP_CHANGES row exists (newer than BASE) → **app edit wins**.
-3. Else → upstream BASE wins.
+### Reconciliation precedence (GOLD/MV + overlay — FULL OUTER, `COALESCE` per column)
+1. If the edit row has a tombstone (`is_deleted = true`) → **object hidden** (works for upstream-backed *and* app-created objects).
+2. Else, **per column:** a non-NULL override in the edit store → **edit wins**; NULL (never edited, or *reverted*) → **BASE wins**.
+3. App-created objects (no BASE row) are surfaced by the FULL OUTER join — the edit store carries every column.
+
+**Revert ≠ delete:** reverting an edit NULLs the override (→ BASE value); deleting the object sets the tombstone (→ hidden).
 
 ```sql
 SELECT /* coalesce by PK, edit precedence */
@@ -102,13 +104,15 @@ WHERE coalesce(a.is_deleted, false) = false;
 | Palantir | Databricks (this POC) |
 |---|---|
 | Backing dataset (source, upstream-owned) | **UC BASE** table (CDF on), read-only from app |
-| Edits layer / writeback dataset (sparse) | **Lakebase `*_write`** (hot) → **UC `*_app_changes`** (Delta, app-owned) |
+| Edits layer / writeback (sparse edits **+ created objects**) | **Lakebase `*_write`** (hot) → **UC `*_app_changes`** (Delta, app-owned); full column set so app-created objects carry their own source values |
 | Merge reconciliation (edits win) | **UC GOLD/MV** = `BASE ⊕ APP_CHANGES` (precedence rules) + Lakebase overlay read (live wins) |
 | Object Storage V2 immediate edit visibility | Lakebase overlay read gives the app immediate visibility |
 | Action Type / writeback (edits-only) | **Lightweight action layer** — writes only to Lakebase `*_write` |
 | Edit batch | Postgres transaction into `*_write`; batched APPLY CHANGES into `*_app_changes` |
 | Object primary key | `<PK_COLS>` shared across BASE / `*_write` / `*_app_changes` |
-| Delete edit / tombstone | `is_deleted` soft-delete flag in `*_write` / `*_app_changes` |
+| Revert an edit (fall back to source) | NULL the override column in `*_write` / `*_app_changes` → `COALESCE` picks BASE |
+| Delete an object | `is_deleted` tombstone in `*_write` / `*_app_changes`, honored in overlay + GOLD |
+| Create a net-new object | `create_object` → new row in `*_write`, `app-<uuid>` PK, `is_new=true`; FULL OUTER surfaces it |
 | Computed property | Derived column in the GOLD/MV definition |
 | "Drop all edits" | Truncate `*_write` + `*_app_changes` (fall back to BASE) |
 
@@ -116,27 +120,29 @@ WHERE coalesce(a.is_deleted, false) = false;
 
 ## 5. POC scope & concrete deliverables (on `fevm-serverless`)
 
-**Objective:** one Object Type, end-to-end, showing an upstream refresh and a user edit coexisting correctly, served to BI via GOLD and to the app via Lakebase overlay.
+**Objective:** one Object Type (**`employee`**), end-to-end, showing upstream refresh, user edits, **object creation**, revert, and delete all coexisting correctly — served to BI via GOLD and to the app via the Lakebase overlay.
 
-Pick one concrete entity for the demo (e.g. `employee` or a customer/asset entity — TBD, see §8). Then build:
+Build (concrete DDL + steps in `IMPLEMENTATION_PLAN.md`):
 
 1. **UC catalog + schema** on `fevm-serverless` — catalog/schema TBD (see §8). Holds BASE, APP_CHANGES, GOLD/MV.
 2. **UC BASE table** — the "original object", CDF enabled, populated by a simulated upstream ETL job (synthetic data). This is the source of truth for the original object.
 3. **Lakebase instance** — Postgres database on `fevm-serverless`, holding:
    - `*_sync` — Synced Table (Continuous) mirror of BASE (read-only).
-   - `*_write` — app change log (same PK, `is_deleted`, a change/sequence column).
+   - `*_write` — app change log; **full column set** (same PK, `is_new`, `is_deleted`, editable + source-class columns, `updated_at` sequence column).
 4. **UC `*_app_changes`** — app-owned Delta table (CDF on), the durable edits layer.
 5. **Reconciliation logic (jobs + notebooks) — the heart of the POC:**
    - Notebook/job: **upstream ETL simulator** that refreshes BASE (to demo refresh resilience).
    - Notebook/job: **`*_write` → `*_app_changes`** (APPLY CHANGES, or notebook MERGE bridge first) on a 1–2 min trigger.
    - Notebook/job or MV: **GOLD = BASE ⊕ APP_CHANGES** with precedence.
-6. **Very lightweight action layer** — a thin write-back surface (small app / API / notebook) that: reads the overlay (`*_sync ⊕ *_write`) and writes edits **only** to Lakebase `*_write`. Demonstrates Palantir "Action" semantics. Keep it minimal — the POC is about the data layer, not the UI.
+6. **Very lightweight action layer** — a thin write-back surface (small app / API / notebook) that reads the overlay (`*_sync ⊕ *_write`) and writes **only** to Lakebase `*_write`, via four operations: **create_object · edit_property · revert_property · delete_object**. Demonstrates Palantir "Action" semantics. Keep it minimal — the POC is about the data layer, not the UI.
 
 **Demo script (acceptance):**
 - App edits a property → appears immediately in overlay read → flows to `*_app_changes` → wins in GOLD.
+- App **creates** a net-new object (`app-…`) → immediate in overlay → flows to `*_app_changes` → appears in GOLD, never in BASE.
 - Upstream ETL refreshes BASE for an edited row → edit still wins in GOLD (refresh resilience).
 - Upstream refreshes a *non-edited* row → new source value shows in GOLD.
-- Delete an edit (tombstone) → GOLD reverts to BASE value.
+- **Revert** an edit → GOLD reverts to the BASE value (edit undone).
+- **Delete** an object (tombstone) → object hidden from overlay + GOLD (upstream-backed *and* app-created).
 - **BASE is never modified by the app** — verify.
 
 ---
@@ -148,10 +154,10 @@ Mirrors Doc 2 §4. Each phase has a clear "done when".
 | Phase | Work | Done when |
 |---|---|---|
 | 0 | UC catalog/schema; BASE table + CDF; ETL simulator loads BASE; Synced Continuous → `*_sync`; app SELECT grant | App can read the object graph from Lakebase |
-| 1 | `*_write` DDL; overlay read (`*_sync ⊕ *_write`); shadow-copy on UPDATE/DELETE of sync-only rows; app DML grants | GET + PATCH work through the action layer |
+| 1 | `*_write` DDL (full column set); FULL OUTER overlay (`*_sync ⊕ *_write`, per-column); app DML grants | create + edit + revert + delete work through the action layer |
 | 2 | Create `*_app_changes`; point APPLY CHANGES (or notebook MERGE) at it — **not BASE** | Dry-run then live apply succeeds |
-| 3 | Build GOLD/MV = BASE ⊕ APP_CHANGES with precedence | BI reads GOLD; BASE unchanged by app |
-| 4 | Archive/purge `*_write` + tombstones after apply | Write tables stay small |
+| 3 | Build GOLD/MV = BASE ⊕ APP_CHANGES (FULL OUTER, per-column, tombstones filtered) | BI reads GOLD; BASE unchanged by app |
+| 4 | (Optional) monitor/archive `*_write` — must **not** break propagation (never hot-path-delete rows) | Write-table size monitored |
 | 5 | (Optional) upgrade notebook MERGE → Triggered SDP APPLY CHANGES | Lag SLA met |
 
 ---
@@ -162,6 +168,9 @@ Mirrors Doc 2 §4. Each phase has a clear "done when".
 - **UC = source of truth + serving; Lakebase = hot overlay.** Rationale in §2.
 - **Edits are sparse and app-owned end to end.** `*_write` (hot) → `*_app_changes` (durable). BASE is upstream-only.
 - **Reconcile on read, edits win.** Matches Foundry exactly; avoids destructive merges into source.
+- **Per-column FULL OUTER reconciliation; the app creates objects too.** Edits are sparse column overrides (`NULL` = not overridden); app-created objects (namespaced `app-<uuid>` PK, `is_new=true`) live entirely in the edit store. This removes the whole-row shadow-copy step.
+- **Revert ≠ delete.** Revert = NULL the override (→ BASE); delete = tombstone (→ hidden). Both are state changes, never hot-path row deletions (else propagation breaks).
+- **Audit via Delta CDF on `*_app_changes`** — the change feed is the who/when/before→after trail (no separate journal for v1).
 - **Start with a notebook MERGE bridge for ⑤, upgrade to Triggered SDP APPLY CHANGES later.** Faster to stand up; APPLY CHANGES is the target for lag/scale.
 - **Keep the action layer minimal.** POC value is the storage/reconciliation layer, not UI polish.
 
@@ -172,14 +181,11 @@ Mirrors Doc 2 §4. Each phase has a clear "done when".
 
 ---
 
-## 8. Open questions (decide at implementation)
+## 8. Decisions (locked) & genuinely-open items
 
-- **Which entity / dataset for the demo?** Need one Object Type with an editable property, a source-only property, and ideally a computed property. Criteria: simple PK, believable "user edits salary/status" story. (Leaning `employee` from the Palantir examples, or a customer/asset entity if there's a better fit for the audience.)
-- **UC catalog & schema names** on `fevm-serverless` — confirm naming and that we have CREATE rights (use `--profile fevm-serverless`).
-- **Lakebase instance** — new instance vs existing on `fevm-serverless`; database/schema names; app service principal identity.
-- **Action layer form factor** — Databricks App (FastAPI/React) vs a thin notebook/REST surface. Minimal either way.
-- **Link Types in scope?** Palantir has relationships too. POC v1 can be single-entity (properties only); add Link Types later if needed.
-- **APPLY CHANGES engine** — Triggered SDP (Lakeflow Declarative Pipeline) vs notebook MERGE for ⑤ at POC stage.
+These are now **locked in `IMPLEMENTATION_PLAN.md` §1**: entity `employee`; catalog `ontology_poc.object_layer`; new smallest Lakebase instance (DB `ontology_poc`) + dedicated app SP; thin notebook/SDK action surface; notebook-MERGE bridge first (SDP later); **record creation supported**; Link Types deferred (§10 of the plan). Do not re-open them here.
+
+**Genuinely open** (decide at implementation — see `IMPLEMENTATION_PLAN.md` §9): Lakebase instance size/region flags; Lakebase read method in the bridge (JDBC vs SDK); GOLD as Materialized View vs plain view.
 
 ---
 
@@ -187,8 +193,10 @@ Mirrors Doc 2 §4. Each phase has a clear "done when".
 
 - **CDF must be enabled on BASE** for Synced Continuous (②) and for APPLY CHANGES sourcing.
 - **Never let the app or sync job write BASE.** Enforced by grants (app SP: no MODIFY on BASE) + discipline.
-- **Deletes:** upsert-only merges won't remove rows — use `is_deleted` tombstones and honor them in GOLD.
-- **Shadow-copy on edit of a sync-only row:** before UPDATE/DELETE of a row that exists only in `*_sync`, copy it into `*_write` then mutate (Doc 2 §6). Otherwise the overlay has nothing to override.
+- **Revert ≠ delete, and neither removes a `*_write` row.** Revert = NULL the override column (→ BASE wins); delete = `is_deleted=true` tombstone (→ object hidden). Both are *state changes*; physically deleting the `*_write` row strands the stale value in `*_app_changes` and breaks propagation.
+- **No shadow-copy** — the per-column FULL OUTER overlay makes editing a sync-only row a plain sparse insert.
+- **App-created PKs must be namespaced** (`app-<uuid>`) so upstream re-ingestion can never collide with an app-created object.
+- **Source-class columns are create-only** — the action layer rejects overrides of upstream-owned columns (`first_name`/`department`/`hire_date`) on existing objects.
 - **Orphaned edits on schema change / PK change:** edits keyed to a dropped column or changed PK become unrenderable — plan schema evolution; "drop all edits" is the escape hatch.
 - **Graph/BI lag:** GOLD only reflects edits after the next APPLY CHANGES run; app overlay is immediate. Document the SLA for BI consumers.
 - **Computed properties recompute on read** — if expensive, materialize into GOLD columns.

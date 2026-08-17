@@ -1,0 +1,19 @@
+resources:
+  jobs:
+    etl_simulator:
+      name: "[${bundle.target}] ontology-poc ETL simulator"
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: row_count
+          default: "100"
+        - name: bump_ids
+          default: "[]"
+        - name: bump_amount
+          default: "0"
+      tasks:
+        - task_key: refresh_employee_base
+          notebook_task:
+            notebook_path: ../src/notebooks/etl_simulator.py

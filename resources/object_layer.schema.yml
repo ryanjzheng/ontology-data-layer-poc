@@ -1,0 +1,6 @@
+resources:
+  schemas:
+    object_layer:
+      name: ${var.schema}
+      catalog_name: ${var.catalog}
+      comment: Development-mode bundle placeholder; the setup job manages object_layer explicitly.

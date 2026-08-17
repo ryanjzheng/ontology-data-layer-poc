@@ -33,6 +33,10 @@
 | App identity | dedicated **service principal** (see §4 grants) | Enforces "never touch BASE" via grants, not just discipline. |
 | Apply engine (⑤) | **notebook MERGE job, Triggered every 1–2 min** for v1; upgrade to **Triggered SDP APPLY CHANGES** in Phase 5 | Faster to stand up. SDP is the scale target, not the POC blocker. |
 | Action layer | **thin notebook/SDK write surface** for v1 | POC value is the data layer, not UI. Upgrade to a Databricks App only if a live UI demo is requested. |
+| Edit model | **per-column overrides** in the edit store; `NULL` = property not overridden; reconcile with `COALESCE` (edit wins) | One model covers partial edits *and* create; also removes the whole-row shadow-copy step. |
+| Record creation | **apps create net-new objects too** (not edit-only) → **FULL OUTER** reconciliation; app-created PKs use an **`app-` namespace** so upstream can never collide | Confirmed requirement. Edit-only (LEFT JOIN) rejected. |
+| Edit audit | **Delta CDF on `*_app_changes`** is the audit trail (who/when/before→after) | Near-free; avoids a separate journal table for v1. |
+| Concurrency | **last-write-wins per PK** | POC scope; edit-conflict resolution is v2+. |
 | Link Types | **out of scope for v1** (single entity, properties only) | Keep the POC to one Object Type end-to-end; add relationships later. |
 | Packaging | **DABs** for UC tables, jobs, GOLD MV, (app). Lakebase instance + Synced Table + Postgres DDL managed via `databricks-lakebase` CLI/SDK **alongside** the bundle | Lakebase objects are only partly DABs-expressible today. |
 
@@ -53,6 +57,13 @@
 | `is_high_risk` | BOOLEAN | **computed** | derived in GOLD only: `salary > 200000`; never stored in BASE/edits |
 | `_etl_run_id` | STRING | source meta | set by ETL simulator each run |
 | `_etl_ts` | TIMESTAMP | source meta | set by ETL simulator |
+| `is_new` | BOOLEAN | edit-store control | `true` = app-created object (no BASE row); edit-store tables only |
+
+**Create support (confirmed requirement).** Apps also create net-new objects, not just edit existing upstream rows. This is carried through the whole plan:
+- The edit store (`*_write` / `*_app_changes`) carries the **full** column set, so a created object supplies its own source-class values.
+- Reconciliation is **FULL OUTER JOIN** with per-column `COALESCE` (edit wins) — the overlay and GOLD both.
+- App-created PKs are **namespaced** (`app-<uuid>`) so upstream re-ingestion can never collide.
+- Source-class columns (`first_name`/`department`/`hire_date`) are writable **only on create**; for existing objects they stay `NULL` in the edit store and BASE always wins them (enforced in the action layer).
 
 ---
 
@@ -93,43 +104,56 @@ Notebook `src/notebooks/etl_simulator.py` + a Job. Writes N synthetic employees 
 **Done when:** rows in `employee_base` appear in Lakebase `public.employee_sync`; app SP can `SELECT` it.
 
 ### Phase 1 — `*_write` + overlay read (skill: `databricks-lakebase`)
-Create the hot edit log and the overlay. Run this Postgres DDL in the Lakebase DB:
+Create the hot edit log (full column set, so it can hold both sparse edits *and* app-created objects) and the FULL OUTER overlay. Run this Postgres DDL in the Lakebase DB:
 ```sql
 CREATE TABLE IF NOT EXISTS public.employee_write (
   employee_id TEXT PRIMARY KEY,
-  salary      NUMERIC(12,2),      -- NULL = this property not edited
-  status      TEXT,               -- NULL = this property not edited
-  is_deleted  BOOLEAN NOT NULL DEFAULT false,
-  seq         BIGINT GENERATED ALWAYS AS IDENTITY,
+  -- source-class columns: written ONLY on CREATE of a net-new object; NULL when editing an existing object
+  first_name  TEXT,
+  department  TEXT,
+  hire_date   DATE,
+  -- editable columns: NULL = property not overridden
+  salary      NUMERIC(12,2),
+  status      TEXT,
+  -- control
+  is_new      BOOLEAN NOT NULL DEFAULT false,  -- true = app-created (no BASE row)
+  is_deleted  BOOLEAN NOT NULL DEFAULT false,  -- true = object deleted (tombstone)
   editor      TEXT,
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()  -- sequence column; bump on EVERY write
 );
 
--- Overlay: live write wins over synced source; tombstones hidden.
+-- Overlay: FULL OUTER so app-created rows (no sync match) and edits both surface; edit wins per column; tombstones hidden.
 CREATE OR REPLACE VIEW public.employee_overlay AS
-SELECT s.employee_id, s.first_name, s.department, s.hire_date,
-       COALESCE(w.salary, s.salary)  AS salary,
-       COALESCE(w.status, s.status)  AS status
+SELECT
+  COALESCE(w.employee_id, s.employee_id) AS employee_id,
+  COALESCE(w.first_name,  s.first_name)  AS first_name,
+  COALESCE(w.department,  s.department)  AS department,
+  COALESCE(w.hire_date,   s.hire_date)   AS hire_date,
+  COALESCE(w.salary,      s.salary)      AS salary,
+  COALESCE(w.status,      s.status)      AS status
 FROM public.employee_sync s
-LEFT JOIN public.employee_write w ON s.employee_id = w.employee_id
+FULL OUTER JOIN public.employee_write w ON s.employee_id = w.employee_id
 WHERE COALESCE(w.is_deleted, false) = false;
 ```
-**Shadow-copy rule (critical, see CONTEXT.md §9):** the action layer must, before an UPDATE/DELETE on a row that exists only in `*_sync`, insert a base copy into `*_write` then apply the edit — otherwise there is nothing to override. (For pure property edits via the overlay's LEFT JOIN this is implicit; keep the rule for app-created objects.)
+**No shadow-copy needed.** The per-column FULL OUTER model makes editing a sync-only row just an insert of a sparse override row (only the edited columns set; source columns `NULL`) — the join supplies the rest. (The old whole-row-overlay design required shadow-copy; this one does not.)
 Grant app SP **SELECT/INSERT/UPDATE/DELETE** on `employee_write` (and SELECT on the overlay).
-**Done when:** an edit inserted into `employee_write` immediately changes `employee_overlay` for that id.
+**Done when:** (a) an edit inserted into `employee_write` immediately changes `employee_overlay` for that id; (b) an app-created row (`app-…`, `is_new=true`) with no sync match appears in `employee_overlay`.
 
 ### Phase 2 — `*_app_changes` + apply bridge (skills: `databricks-unity-catalog`, `databricks-jobs`)
-UC Delta edit landing table (CDF on), **app-owned — never write BASE**:
+UC Delta edit landing table (CDF on — this is also the **audit trail**), full column set, **app-owned — never write BASE**:
 ```sql
 CREATE TABLE IF NOT EXISTS ontology_poc.object_layer.employee_app_changes (
-  employee_id   STRING NOT NULL,
-  salary        DECIMAL(12,2),
-  status        STRING,
-  is_deleted    BOOLEAN NOT NULL,
-  seq           BIGINT,
-  editor        STRING,
-  synced_at     TIMESTAMP NOT NULL,
-  source_run_id STRING
+  employee_id    STRING NOT NULL,
+  first_name     STRING,
+  department     STRING,
+  hire_date      DATE,
+  salary         DECIMAL(12,2),
+  status         STRING,
+  is_new         BOOLEAN NOT NULL,
+  is_deleted     BOOLEAN NOT NULL,
+  editor         STRING,
+  src_updated_at TIMESTAMP,     -- from *_write.updated_at (sequence for ordering / SDP)
+  synced_at      TIMESTAMP NOT NULL
 ) USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 ```
@@ -138,34 +162,40 @@ Notebook `src/notebooks/apply_bridge.py` (Triggered Job, 1–2 min): read `emplo
 MERGE INTO ontology_poc.object_layer.employee_app_changes t
 USING _write_src s ON t.employee_id = s.employee_id
 WHEN MATCHED THEN UPDATE SET
-  salary = s.salary, status = s.status, is_deleted = s.is_deleted,
-  seq = s.seq, editor = s.editor, synced_at = current_timestamp()
+  first_name = s.first_name, department = s.department, hire_date = s.hire_date,
+  salary = s.salary, status = s.status, is_new = s.is_new, is_deleted = s.is_deleted,
+  editor = s.editor, src_updated_at = s.updated_at, synced_at = current_timestamp()
 WHEN NOT MATCHED THEN INSERT
-  (employee_id, salary, status, is_deleted, seq, editor, synced_at)
-  VALUES (s.employee_id, s.salary, s.status, s.is_deleted, s.seq, s.editor, current_timestamp());
+  (employee_id, first_name, department, hire_date, salary, status, is_new, is_deleted, editor, src_updated_at, synced_at)
+  VALUES (s.employee_id, s.first_name, s.department, s.hire_date, s.salary, s.status, s.is_new, s.is_deleted, s.editor, s.updated_at, current_timestamp());
 ```
-**Never target `employee_base`.** **Done when:** a dry run then a live run lands the edit in `employee_app_changes`.
+**Never target `employee_base`.** **Reverts and deletes propagate as ordinary updates** — the action layer NULLs a column (revert) or sets `is_deleted=true` (delete) but never removes the `*_write` row, so the bridge always carries the latest state. **Done when:** a dry run then a live run lands an edit *and* a create *and* a revert in `employee_app_changes`.
 
 ### Phase 3 — GOLD / MV (skill: `databricks-unity-catalog` / `databricks-metric-views`)
+**FULL OUTER JOIN** (create support) with per-column `COALESCE` (edit wins), tombstones filtered:
 ```sql
 CREATE MATERIALIZED VIEW ontology_poc.object_layer.employee_gold AS
-SELECT b.employee_id, b.first_name, b.department, b.hire_date,
-       COALESCE(a.salary, b.salary) AS salary,
-       COALESCE(a.status, b.status) AS status,
-       (COALESCE(a.salary, b.salary) > 200000) AS is_high_risk
+SELECT
+  COALESCE(a.employee_id, b.employee_id) AS employee_id,
+  COALESCE(a.first_name,  b.first_name)  AS first_name,
+  COALESCE(a.department,  b.department)  AS department,
+  COALESCE(a.hire_date,   b.hire_date)   AS hire_date,
+  COALESCE(a.salary,      b.salary)      AS salary,
+  COALESCE(a.status,      b.status)      AS status,
+  (COALESCE(a.salary, b.salary) > 200000) AS is_high_risk
 FROM ontology_poc.object_layer.employee_base b
-LEFT JOIN ontology_poc.object_layer.employee_app_changes a
+FULL OUTER JOIN ontology_poc.object_layer.employee_app_changes a
   ON b.employee_id = a.employee_id
 WHERE COALESCE(a.is_deleted, false) = false;
 ```
-(Use `FULL OUTER JOIN` instead of `LEFT` only if the app can create net-new objects — out of scope for v1.) Point BI at `employee_gold`, **not** BASE.
-**Done when:** an edited row shows the edited value in GOLD after the next bridge run; BASE is unchanged.
+Row cases: existing+edited → `a` overrides editable cols, `b` supplies source cols; app-created (`b` NULL) → `a` wins; reverted (`a` col NULL) → `b` wins; deleted (`a.is_deleted`) → filtered out. Point BI at `employee_gold`, **not** BASE.
+**Done when:** edited, created, reverted, and deleted objects each resolve correctly in GOLD after the next bridge run; BASE is unchanged.
 
-### Phase 4 — Archive / purge (skill: `databricks-jobs`)
-Append a step to the Phase-2 job: after a successful apply, archive + purge applied rows/tombstones from `employee_write` so it stays small; keep live entity rows needed for the overlay. **Done when:** `employee_write` row count stays bounded across many edits.
+### Phase 4 — Archive / purge (skill: `databricks-jobs`) — optional for v1
+If implemented, it must **not break propagation**: never delete a `*_write` row whose latest state isn't yet reflected in `*_app_changes`, and never delete a row that still overrides BASE (its NULLs/tombstone are meaningful state). **Simplest v1 stance: skip physical purge; just monitor `*_write` size.** Real purge belongs with the Phase-5 SDP move (`APPLY AS DELETE` handles tombstones natively). **Done when:** `*_write` size is monitored and a purge (if any) leaves GOLD unchanged.
 
 ### Phase 5 (optional) — MERGE → Triggered SDP APPLY CHANGES (skill: `databricks-pipelines`)
-Replace the notebook MERGE bridge with a Triggered Lakeflow Declarative Pipeline using `APPLY CHANGES INTO ... KEYS(employee_id) SEQUENCE BY seq APPLY AS DELETE WHEN is_deleted = true`. **Done when:** lag SLA met with the pipeline; notebook bridge retired.
+Replace the notebook MERGE bridge with a Triggered Lakeflow Declarative Pipeline using `APPLY CHANGES INTO ... KEYS(employee_id) SEQUENCE BY src_updated_at APPLY AS DELETE WHEN is_deleted = true`. **Done when:** lag SLA met with the pipeline; notebook bridge retired.
 
 ---
 
@@ -183,11 +213,16 @@ Replace the notebook MERGE bridge with a Triggered Lakeflow Declarative Pipeline
 ---
 
 ## 5. Action layer (thin write surface)
-Notebook/SDK (`src/action/apply_action.py`) exposing an `apply_action(employee_id, {salary?, status?}, editor)` that:
-1. (shadow-copy if the id is sync-only) — insert a base copy into `employee_write`.
-2. `INSERT ... ON CONFLICT (employee_id) DO UPDATE` the edited properties into `employee_write`, bump `updated_at`.
-3. Read-back via `employee_overlay` to confirm immediate visibility.
-Writes **only** to `employee_write`. Tombstone = set `is_deleted = true` (delete-edit path).
+Notebook/SDK (`src/action/apply_action.py`). Writes **only** to `employee_write`; every op bumps `updated_at`; then read-back via `employee_overlay` to confirm immediate visibility. Four distinct operations (this is the fix — edit, revert, and delete are *not* the same thing):
+
+| Op | What it does | Write-store effect |
+|---|---|---|
+| **create_object**(props) | new object upstream never had | generate `employee_id = 'app-'||uuid` (unless supplied); `INSERT` full row, `is_new=true`, `is_deleted=false`. Source-class cols required here. |
+| **edit_property**(pk, {salary?, status?}) | override an editable prop on an existing object | `INSERT ... ON CONFLICT (employee_id) DO UPDATE` setting only the given **editable** cols. **Reject** any source-class col for an existing object. |
+| **revert_property**(pk, prop) | undo an edit → fall back to source | `UPDATE ... SET <prop> = NULL`. `COALESCE` then picks BASE. (For an `is_new` object there is no BASE — a full revert = delete_object.) |
+| **delete_object**(pk) | hide the object entirely | upsert `is_deleted = true` (tombstone). Works for upstream-backed *and* app-created objects. `undelete` = set `false`. |
+
+**Never physically `DELETE` a `*_write` row in these ops** — revert/delete are *state changes* (NULL / `is_deleted`); removing the row would strand the stale value in `*_app_changes` and break propagation. Physical purge is the separate, careful Phase-4 step.
 
 ---
 
@@ -219,13 +254,15 @@ Deploy: `databricks bundle deploy --profile fevm-serverless` (confirm via skill)
 
 ---
 
-## 7. Acceptance — the 5 behaviors (build `demo/run_demo.py`)
-Prove CONTEXT.md §5 end-to-end, in order:
-1. **Edit propagation:** action edits `salary` → immediate in `employee_overlay` → after next bridge run appears in `employee_app_changes` → wins in `employee_gold`.
-2. **Refresh resilience:** re-run ETL simulator to change salary of an **edited** row in BASE → GOLD still shows the edit.
-3. **Non-edited refresh:** ETL changes a **non-edited** row → new source value flows to GOLD.
-4. **Tombstone revert:** set `is_deleted = true` for an edit → after bridge run, GOLD reverts to BASE value.
-5. **BASE immutability:** show via `employee_base` history/CDF + the grant check that the app SP never modified BASE.
+## 7. Acceptance — the behaviors (build `demo/run_demo.py`)
+Prove end-to-end, in order:
+1. **Edit propagation:** `edit_property` on `salary` → immediate in `employee_overlay` → after next bridge run appears in `employee_app_changes` → wins in `employee_gold`.
+2. **Create:** `create_object` (`app-…`) → immediate in overlay → flows to `employee_app_changes` → appears in GOLD, and **never** in BASE.
+3. **Refresh resilience:** re-run ETL to change salary of an **edited** row in BASE → GOLD still shows the edit.
+4. **Non-edited refresh:** ETL changes a **non-edited** row → new source value flows to GOLD.
+5. **Revert edit:** `revert_property(salary)` → after bridge run, GOLD `salary` reverts to the **BASE** value (edit undone). *(This is the corrected behavior — revert ≠ delete.)*
+6. **Delete object:** `delete_object` → tombstone → object hidden from overlay **and** GOLD (test on both an upstream-backed and an app-created object).
+7. **BASE immutability:** show via `employee_base` history/CDF + the grant check that the app SP never modified BASE.
 
 ---
 
@@ -233,7 +270,10 @@ Prove CONTEXT.md §5 end-to-end, in order:
 - **CDF on BASE before** creating the Synced Table and the apply source — else Synced Continuous fails.
 - **Grants are the real guarantee** that the app never touches BASE — verify explicitly (#5), don't rely on discipline.
 - **Deletes need tombstones** — MERGE is upsert-only; honor `is_deleted` in both the overlay and GOLD.
-- **Shadow-copy sync-only rows before edit** (§1 phase), else the overlay has nothing to override for app-created objects.
+- **No shadow-copy** — the per-column FULL OUTER overlay makes editing a sync-only row a plain sparse insert. (Do not reintroduce the old whole-row copy step.)
+- **Revert ≠ delete.** Revert = NULL the column (falls back to BASE); delete = `is_deleted=true` (hides the object). Never conflate them, and never physically remove a `*_write` row in the hot path (breaks propagation).
+- **App-created PKs must be namespaced** (`app-<uuid>`) so an upstream re-ingest can never collide with an app-created object.
+- **Source-class columns are create-only** — the action layer must reject overrides of `first_name`/`department`/`hire_date` on existing objects (upstream owns them).
 - **BI lag:** GOLD only reflects edits after each bridge run; the Lakebase overlay is immediate. Document the SLA.
 - **Computed props recompute on read** — `is_high_risk` lives only in GOLD; never persist it to BASE/edits.
 - **Serverless warehouse is stopped** — first GOLD query pays cold-start (fine for a POC).
@@ -243,3 +283,13 @@ Prove CONTEXT.md §5 end-to-end, in order:
 - **Lakebase instance size/region flags** — pick smallest available in the workspace's region; confirm exact flags from `databricks-lakebase`.
 - **Lakebase read method in the bridge** — JDBC (postgres driver) vs Lakebase SDK read; choose whichever the `databricks-lakebase` skill documents as current/supported on serverless.
 - **GOLD as Materialized View vs plain view** — MV if refresh cost/perf matters for the demo; plain view is simpler and always fresh. Default MV; fall back to view if MV refresh wiring is fiddly.
+
+---
+
+## 10. Deferred to v2+ (named, not built)
+Not required to serve edits + upstream for one entity — listed so scope is explicit and nothing is assumed done. We are inspired by Object Storage V2, not copying it.
+- **Link Types** (relationships) + link edits/actions — the biggest cut.
+- **Action validation + Functions** (business logic) + **multi-object atomic edit batches** — mostly app-layer, above the storage line.
+- **Rich property types** (struct / array / enum / media / geotime); **multiple backing datasets**; Interfaces / Shared Property Templates.
+- **Edit-conflict resolution** — v1 is last-write-wins per PK.
+- **"Edited to explicit NULL"** on an editable property — `NULL` currently means *not overridden*; disambiguating requires a per-property patch representation.

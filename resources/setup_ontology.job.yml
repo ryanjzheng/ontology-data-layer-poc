@@ -1,0 +1,13 @@
+resources:
+  jobs:
+    setup_ontology:
+      name: "[${bundle.target}] ontology-poc setup"
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+      tasks:
+        - task_key: create_uc_objects
+          notebook_task:
+            notebook_path: ../src/notebooks/setup_ontology.py
