@@ -1,0 +1,276 @@
+<title>Object Storage V2 ↔ Databricks</title>
+<style>
+  :root {
+    --bg: #F4F5F8;
+    --surface: #FFFFFF;
+    --ink: #1C222B;
+    --muted: #5B6572;
+    --hair: #D9DEE6;
+    --p-accent: #45577D;   /* Palantir — slate indigo */
+    --p-box: #EEF1F6;
+    --p-tint: rgba(69,87,125,0.055);
+    --d-accent: #CF4A22;   /* Databricks — lava */
+    --d-box: #FBEEE9;
+    --d-tint: rgba(207,74,34,0.05);
+    --ok: #2F855A;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #12151B;
+      --surface: #1A1F27;
+      --ink: #E7EBF1;
+      --muted: #9AA4B2;
+      --hair: #2B323D;
+      --p-accent: #93A7CD;
+      --p-box: #1F2733;
+      --p-tint: rgba(147,167,205,0.10);
+      --d-accent: #F1855F;
+      --d-box: #2A1F19;
+      --d-tint: rgba(241,133,95,0.09);
+      --ok: #58BE92;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151B;
+    --surface: #1A1F27;
+    --ink: #E7EBF1;
+    --muted: #9AA4B2;
+    --hair: #2B323D;
+    --p-accent: #93A7CD;
+    --p-box: #1F2733;
+    --p-tint: rgba(147,167,205,0.10);
+    --d-accent: #F1855F;
+    --d-box: #2A1F19;
+    --d-tint: rgba(241,133,95,0.09);
+    --ok: #58BE92;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 60px) clamp(18px, 4vw, 40px) 64px;
+  }
+
+  .kicker {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-size: clamp(26px, 4.5vw, 40px);
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0 0 12px;
+    font-weight: 760;
+  }
+  .lede {
+    font-size: clamp(15px, 1.9vw, 17px);
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 30px;
+  }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  figure { margin: 0; }
+  .figscroll { overflow-x: auto; }
+  svg.map { display: block; width: 100%; height: auto; min-width: 620px; }
+
+  /* SVG element styling via tokens */
+  .panel-p { fill: var(--p-tint); stroke: var(--hair); }
+  .panel-d { fill: var(--d-tint); stroke: var(--hair); }
+  .box-p   { fill: var(--p-box); stroke: var(--p-accent); }
+  .box-d   { fill: var(--d-box); stroke: var(--d-accent); }
+  .t-p     { fill: var(--p-accent); font-family: var(--font-sans); font-weight: 700; }
+  .t-d     { fill: var(--d-accent); font-family: var(--font-mono); font-weight: 600; }
+  .sub     { fill: var(--muted); font-family: var(--font-sans); }
+  .eyebrow { fill: var(--muted); font-family: var(--font-sans); font-weight: 700; letter-spacing: 0.14em; }
+  .colname { fill: var(--ink); font-family: var(--font-sans); font-weight: 720; }
+  .conn    { stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 2 4; opacity: 0.75; }
+  .node    { fill: var(--surface); stroke: var(--ok); stroke-width: 1.6; }
+  .glyph   { fill: var(--ok); font-family: var(--font-sans); font-weight: 800; }
+
+  figcaption {
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  .insight {
+    margin: 34px 0 0;
+    padding: 20px 22px;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-left: 3px solid var(--ok);
+    border-radius: 12px;
+  }
+  .insight h2 {
+    margin: 0 0 6px;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+  .insight p { margin: 0; font-size: 14.5px; color: var(--muted); }
+  .insight code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    color: var(--ink);
+    background: var(--p-tint);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  .notes {
+    margin-top: 22px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .note {
+    padding: 14px 16px;
+    border: 1px solid var(--hair);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .note .tag {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+  .note.approx .tag { color: var(--d-accent); }
+  .note.gap .tag    { color: var(--ok); }
+  .note.scope .tag  { color: var(--p-accent); }
+  .note p { margin: 0; font-size: 13px; color: var(--muted); }
+  .note code { font-family: var(--font-mono); font-size: 0.9em; color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <p class="kicker">Ontology Data Layer POC</p>
+  <h1>Object Storage V2, mapped onto Databricks</h1>
+  <p class="lede">The same object-storage behaviors, two sides. <b>Palantir Object Storage V2</b> as the conceptual model; <b>Unity Catalog ⊕ Lakebase</b> as the concrete build. Layers that sit at the same height are the same capability — the ✓ marks a faithful behavioral match.</p>
+
+  <figure>
+    <div class="figscroll">
+      <svg class="map" viewBox="0 0 1000 640" role="img" aria-label="Side-by-side mapping of Palantir Object Storage V2 layers to their Databricks Unity Catalog and Lakebase equivalents. Six layers map one to one: backing dataset to UC BASE, backing index to Lakebase sync table, edit store to Lakebase write table feeding a UC app-changes table, object read to the overlay read, materialized dataset to UC gold materialized view, and apply action to the action layer.">
+        <!-- side panels -->
+        <rect class="panel-p" x="64" y="98" width="376" height="512" rx="18"/>
+        <rect class="panel-d" x="560" y="98" width="376" height="512" rx="18"/>
+
+        <!-- column headers -->
+        <text class="eyebrow" x="252" y="60" text-anchor="middle" font-size="11.5">CONCEPTUAL MODEL</text>
+        <text class="colname" x="252" y="83" text-anchor="middle" font-size="18">Palantir · Object Storage V2</text>
+        <text class="eyebrow" x="748" y="60" text-anchor="middle" font-size="11.5">CONCRETE IMPLEMENTATION</text>
+        <text class="colname" x="748" y="83" text-anchor="middle" font-size="18">Databricks · UC ⊕ Lakebase</text>
+
+        <!-- ROW 1 -->
+        <line class="conn" x1="440" y1="142" x2="487" y2="142"/>
+        <line class="conn" x1="513" y1="142" x2="560" y2="142"/>
+        <circle class="node" cx="500" cy="142" r="13"/>
+        <text class="glyph" x="500" y="146.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="112" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="138" text-anchor="middle" font-size="15">Backing Dataset</text>
+        <text class="sub" x="252" y="157" text-anchor="middle" font-size="11.5">source · upstream ETL · read-only</text>
+        <rect class="box-d" x="588" y="112" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="138" text-anchor="middle" font-size="14.5">UC BASE</text>
+        <text class="sub" x="748" y="157" text-anchor="middle" font-size="11.5">Delta + CDF · upstream ETL · read-only</text>
+
+        <!-- ROW 2 -->
+        <line class="conn" x1="440" y1="222" x2="487" y2="222"/>
+        <line class="conn" x1="513" y1="222" x2="560" y2="222"/>
+        <circle class="node" cx="500" cy="222" r="13"/>
+        <text class="glyph" x="500" y="226.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="192" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="218" text-anchor="middle" font-size="15">Backing Index</text>
+        <text class="sub" x="252" y="237" text-anchor="middle" font-size="11.5">source indexed for reads</text>
+        <rect class="box-d" x="588" y="192" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="218" text-anchor="middle" font-size="14.5">Lakebase *_sync</text>
+        <text class="sub" x="748" y="237" text-anchor="middle" font-size="11.5">Synced Continuous mirror of BASE</text>
+
+        <!-- ROW 3 -->
+        <line class="conn" x1="440" y1="302" x2="487" y2="302"/>
+        <line class="conn" x1="513" y1="302" x2="560" y2="302"/>
+        <circle class="node" cx="500" cy="302" r="13"/>
+        <text class="glyph" x="500" y="306.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="272" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="298" text-anchor="middle" font-size="15">Edit Store</text>
+        <text class="sub" x="252" y="317" text-anchor="middle" font-size="11.5">sparse · keyed by PK · edits only</text>
+        <rect class="box-d" x="588" y="272" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="298" text-anchor="middle" font-size="13.5">*_write → *_app_changes</text>
+        <text class="sub" x="748" y="317" text-anchor="middle" font-size="11.5">hot (Lakebase) → durable (UC Delta)</text>
+
+        <!-- ROW 4 -->
+        <line class="conn" x1="440" y1="382" x2="487" y2="382"/>
+        <line class="conn" x1="513" y1="382" x2="560" y2="382"/>
+        <circle class="node" cx="500" cy="382" r="13"/>
+        <text class="glyph" x="500" y="386.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="352" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="378" text-anchor="middle" font-size="15">Object Read</text>
+        <text class="sub" x="252" y="397" text-anchor="middle" font-size="11.5">live merge · edits win · &lt;100ms</text>
+        <rect class="box-d" x="588" y="352" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="378" text-anchor="middle" font-size="14">Overlay read</text>
+        <text class="sub" x="748" y="397" text-anchor="middle" font-size="11.5">*_sync ⊕ *_write · live wins</text>
+
+        <!-- ROW 5 -->
+        <line class="conn" x1="440" y1="462" x2="487" y2="462"/>
+        <line class="conn" x1="513" y1="462" x2="560" y2="462"/>
+        <circle class="node" cx="500" cy="462" r="13"/>
+        <text class="glyph" x="500" y="466.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="432" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="458" text-anchor="middle" font-size="15">Materialized Dataset</text>
+        <text class="sub" x="252" y="477" text-anchor="middle" font-size="11.5">async source ⊕ edits</text>
+        <rect class="box-d" x="588" y="432" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="458" text-anchor="middle" font-size="14.5">UC GOLD / MV</text>
+        <text class="sub" x="748" y="477" text-anchor="middle" font-size="11.5">BASE ⊕ APP_CHANGES · edits win</text>
+
+        <!-- ROW 6 -->
+        <line class="conn" x1="440" y1="542" x2="487" y2="542"/>
+        <line class="conn" x1="513" y1="542" x2="560" y2="542"/>
+        <circle class="node" cx="500" cy="542" r="13"/>
+        <text class="glyph" x="500" y="546.5" text-anchor="middle" font-size="14">✓</text>
+        <rect class="box-p" x="92" y="512" width="320" height="60" rx="10"/>
+        <text class="t-p" x="252" y="538" text-anchor="middle" font-size="15">Apply Action</text>
+        <text class="sub" x="252" y="557" text-anchor="middle" font-size="11.5">writeback to edit store only</text>
+        <rect class="box-d" x="588" y="512" width="320" height="60" rx="10"/>
+        <text class="t-d" x="748" y="538" text-anchor="middle" font-size="14">Action layer</text>
+        <text class="sub" x="748" y="557" text-anchor="middle" font-size="11.5">writes *_write only · never BASE</text>
+      </svg>
+    </div>
+    <figcaption>Modeling V2, not V1 — separate edit store, immediate visibility, and a “drop all edits” reset. A behavioral reconstruction from Databricks primitives, not a reimplementation of V2 internals.</figcaption>
+  </figure>
+
+  <div class="insight">
+    <h2>Why the mapping is principled, not forced</h2>
+    <p>V2 exposes <b>two</b> read surfaces — an <em>immediate</em> object read and an <em>async</em> materialized dataset. Our split reproduces that duality exactly: <code>Lakebase overlay</code> = the immediate read, <code>UC GOLD / MV</code> = the materialized dataset. Rows 4 and 5 aren’t two guesses; they’re the same two surfaces V2 already has.</p>
+  </div>
+
+  <div class="notes">
+    <div class="note approx">
+      <p class="tag">≈ Approximate</p>
+      <p>Incremental indexing (billions of objects), low-latency streaming ingest, and 10k-object/action throughput map in shape but aren’t proven at that scale here.</p>
+    </div>
+    <div class="note gap">
+      <p class="tag">⚠ Build gap</p>
+      <p>Per-object row-level security is native in V2. For us it’s a build task — <code>UC row filters</code> + Lakebase RLS — not a freebie.</p>
+    </div>
+    <div class="note scope">
+      <p class="tag">Out of scope</p>
+      <p>V2 is the storage substrate only. The object-type registry, OSDK, Functions runtime, Actions validation, and Link Types sit above it.</p>
+    </div>
+  </div>
+</div>
