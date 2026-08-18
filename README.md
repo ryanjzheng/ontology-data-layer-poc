@@ -10,7 +10,7 @@ public.employee_write ──2-minute bridge──> UC employee_app_changes
 employee_base ⊕ employee_app_changes ────> UC employee_gold
 ```
 
-The app/action identity can write only `public.employee_write`; it has no
+The Databricks App identity can write only `public.employee_write`; it has no
 privilege on `employee_base`. Edits are sparse, app-created IDs use the
 `app-` namespace, reverts set an override to `NULL`, and deletes use
 tombstones.
@@ -24,14 +24,11 @@ databricks bundle run etl_simulator -t dev --profile fevm-serverless
 uv run python src/lakebase/setup.py --profile fevm-serverless
 ```
 
-## Action examples
+## Action surface
 
-```bash
-uv run python -m src.action.apply_action list --limit 5
-uv run python -m src.action.apply_action edit emp-00001 \
-  --salary 250000 --editor ryan.zheng@databricks.com
-uv run python -m src.action.apply_action revert emp-00001 salary \
-  --editor ryan.zheng@databricks.com
-```
+Create, edit, revert, and delete objects only through the deployed
+[Object Storage Lab](https://ontology-object-demo-7474658463664047.aws.databricksapps.com).
+Its AppKit routes live in
+`app/ontology-object-demo/server/routes/lakebase/employee-routes.ts`.
 
 Run local checks with `uv run ruff check . && uv run pytest`.

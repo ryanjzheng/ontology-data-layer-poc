@@ -1,0 +1,180 @@
+<title>Lakebase-Owned Edits</title>
+<style>
+  :root {
+    --bg: #F4F5F8; --surface: #FFFFFF; --ink: #1C222B; --muted: #5B6572; --hair: #D9DEE6;
+    --p-accent: #45577D; --p-box: #EEF1F6; --p-tint: rgba(69,87,125,0.06);
+    --d-accent: #CF4A22; --d-box: #FBEEE9; --d-tint: rgba(207,74,34,0.06);
+    --ok: #2F855A; --ok-tint: rgba(47,133,90,0.10); --ok-strong: rgba(47,133,90,0.16);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --bg:#12151B; --surface:#1A1F27; --ink:#E7EBF1; --muted:#9AA4B2; --hair:#2B323D;
+    --p-accent:#93A7CD; --p-box:#1F2733; --p-tint:rgba(147,167,205,0.11);
+    --d-accent:#F1855F; --d-box:#2A1F19; --d-tint:rgba(241,133,95,0.10);
+    --ok:#58BE92; --ok-tint:rgba(88,190,146,0.14); --ok-strong:rgba(88,190,146,0.22);
+  }}
+  :root[data-theme="dark"] {
+    --bg:#12151B; --surface:#1A1F27; --ink:#E7EBF1; --muted:#9AA4B2; --hair:#2B323D;
+    --p-accent:#93A7CD; --p-box:#1F2733; --p-tint:rgba(147,167,205,0.11);
+    --d-accent:#F1855F; --d-box:#2A1F19; --d-tint:rgba(241,133,95,0.10);
+    --ok:#58BE92; --ok-tint:rgba(88,190,146,0.14); --ok-strong:rgba(88,190,146,0.22);
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--font-sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1040px; margin:0 auto; padding:clamp(28px,5vw,60px) clamp(18px,4vw,40px) 64px; }
+  .kicker { font-size:12px; letter-spacing:0.18em; text-transform:uppercase; font-weight:700; color:var(--muted); margin:0 0 12px; }
+  h1 { font-size:clamp(26px,4.5vw,38px); line-height:1.12; letter-spacing:-0.02em; text-wrap:balance; margin:0 0 12px; font-weight:760; }
+  .lede { font-size:clamp(15px,1.9vw,17px); color:var(--muted); max-width:68ch; margin:0 0 22px; }
+  .lede b { color:var(--ink); font-weight:650; }
+  figure { margin:0; }
+  .figscroll { overflow-x:auto; }
+  svg.map { display:block; width:100%; height:auto; min-width:760px; }
+
+  .f-src  { stroke:var(--p-accent); stroke-width:1.8; fill:none; }
+  .f-edit { stroke:var(--d-accent); stroke-width:2.0; fill:none; }
+  .f-read { stroke:var(--muted);    stroke-width:1.7; fill:none; }
+  .f-deriv{ stroke:var(--muted);    stroke-width:1.7; fill:none; stroke-dasharray:5 4; opacity:0.8; }
+  .h-src  { fill:var(--p-accent); } .h-edit { fill:var(--d-accent); } .h-read { fill:var(--muted); }
+  .lbl      { font-family:var(--font-sans); font-size:11px; font-weight:700; }
+  .lbl-src  { fill:var(--p-accent); } .lbl-edit { fill:var(--d-accent); } .lbl-read { fill:var(--muted); }
+  .note-txt { fill:var(--muted); font-family:var(--font-sans); font-size:10.5px; font-style:italic; }
+  .sub    { fill:var(--muted); font-family:var(--font-sans); }
+  .mono   { font-family:var(--font-mono); }
+  figcaption { margin-top:14px; font-size:12.5px; color:var(--muted); text-align:center; }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin:18px 0 0; font-size:12.5px; color:var(--muted); }
+  .legend span { display:inline-flex; align-items:center; gap:7px; }
+  .legend i { width:22px; height:0; border-top-width:2.4px; border-top-style:solid; display:inline-block; }
+  .lg-src i{border-color:var(--p-accent);} .lg-edit i{border-color:var(--d-accent);}
+  .lg-read i{border-color:var(--muted);} .lg-deriv i{border-color:var(--muted); border-top-style:dashed;}
+  .lg-sor { display:inline-flex; align-items:center; gap:6px; }
+  .lg-sor b { color:var(--ok); }
+
+  h2.sec { font-size:clamp(18px,2.4vw,22px); letter-spacing:-0.015em; font-weight:730; margin:40px 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--hair); vertical-align:top; }
+  th { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  th.plan { color:var(--d-accent); } th.this { color:var(--ok); }
+  td.axis { font-weight:700; color:var(--ink); white-space:nowrap; }
+  td b { color:var(--ink); }
+  code { font-family:var(--font-mono); font-size:0.88em; background:var(--p-tint); color:var(--ink); padding:1px 5px; border-radius:4px; }
+  .pick { margin-top:14px; padding:16px 18px; border:1px solid var(--hair); border-left:3px solid var(--ok); border-radius:12px; background:var(--surface); }
+  .pick h3 { margin:0 0 6px; font-size:14.5px; } .pick p { margin:0; font-size:13.5px; color:var(--muted); }
+  .pick p b { color:var(--ink); }
+</style>
+
+<div class="wrap">
+  <p class="kicker">Ontology Data Layer POC · variant deep-dive</p>
+  <h1>Edits owned by Lakebase</h1>
+  <p class="lede">Same nodes as the plan — the <b>authority flips</b>. Lakebase Postgres becomes the durable <b>system of record for edits</b> (not a rebuildable buffer), so app read <em>and</em> write <em>and</em> reconcile all happen in one engine. UC BASE stays the source of truth; the UC edit copy becomes a <b>derived, disposable</b> BI feed. Pick this when write velocity/concurrency is the constraint.</p>
+
+  <figure>
+    <div class="figscroll">
+      <svg class="map" viewBox="0 0 1020 540" role="img" aria-label="Lakebase-owned edits architecture. Upstream ETL ingests into UC BASE, the source of truth. UC BASE is synced continuously into Lakebase Postgres. Inside Lakebase, three objects: employee_sync (a read-only mirror of BASE), employee_edits (the durable ACID edit store and system of record for edits), and employee_overlay (a view reconciling sync and edits in-database). Apps and users both read the overlay and write edits directly against Lakebase, at millisecond latency in one engine. A derived, disposable edit copy syncs one-directionally from Lakebase into UC purely for BI; UC GOLD is built from BASE plus that derived edit copy and is rebuildable from Lakebase. Recovery flows from Lakebase to UC, not the reverse.">
+        <defs>
+          <marker id="ah-src"  viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="h-src" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ah-edit" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path class="h-edit" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ah-read" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="h-read" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <rect x="20" y="34" width="980" height="486" rx="18" fill="var(--p-tint)" stroke="var(--hair)"/>
+
+        <!-- ACTOR -->
+        <rect x="560" y="50" width="210" height="48" rx="10" fill="var(--surface)" stroke="var(--hair)" stroke-width="1.4"/>
+        <text x="665" y="72" text-anchor="middle" font-size="13.5" fill="var(--ink)" font-weight="700">Apps · Users · Agents</text>
+        <text class="sub" x="665" y="89" text-anchor="middle" font-size="10.5">one engine for read + write</text>
+
+        <!-- UPSTREAM -->
+        <rect x="40" y="206" width="140" height="64" rx="10" fill="var(--p-box)" stroke="var(--p-accent)" stroke-width="1.4"/>
+        <text x="110" y="234" text-anchor="middle" font-size="13" fill="var(--p-accent)" font-weight="720">Upstream ETL</text>
+        <text class="sub" x="110" y="252" text-anchor="middle" font-size="10.5">source producer</text>
+
+        <!-- UC BASE -->
+        <rect x="214" y="150" width="196" height="86" rx="11" fill="var(--p-box)" stroke="var(--p-accent)" stroke-width="1.5"/>
+        <text x="312" y="180" text-anchor="middle" font-size="15" fill="var(--p-accent)" font-weight="720">UC BASE</text>
+        <text class="sub" x="312" y="198" text-anchor="middle" font-size="10.5">Delta + CDF · upstream-owned</text>
+        <rect x="252" y="208" width="120" height="19" rx="9" fill="var(--ok-tint)" stroke="var(--ok)" stroke-width="1"/>
+        <text x="312" y="221" text-anchor="middle" font-size="10" fill="var(--ok)" font-weight="700">◆ SoR · source</text>
+
+        <!-- LAKEBASE (fused engine — the pivot) -->
+        <rect x="470" y="120" width="342" height="262" rx="14" fill="var(--surface)" stroke="var(--ok)" stroke-width="2.4"/>
+        <text x="488" y="146" font-size="15" fill="var(--ok)" font-weight="740">Lakebase · Postgres</text>
+        <rect x="636" y="130" width="164" height="20" rx="9" fill="var(--ok-strong)" stroke="var(--ok)" stroke-width="1"/>
+        <text x="718" y="144" text-anchor="middle" font-size="10" fill="var(--ok)" font-weight="700">◆ SoR · edits (durable)</text>
+
+        <!-- inner: sync mirror -->
+        <rect x="488" y="162" width="306" height="46" rx="9" fill="var(--p-tint)" stroke="var(--hair)"/>
+        <text class="mono" x="502" y="182" font-size="12" fill="var(--ink)" font-weight="600">employee_sync</text>
+        <text class="sub" x="502" y="198" font-size="10.5">read-only mirror of BASE</text>
+        <!-- inner: edits (durable SoR) -->
+        <rect x="488" y="216" width="306" height="46" rx="9" fill="var(--d-tint)" stroke="var(--d-accent)" stroke-width="1.3"/>
+        <text class="mono" x="502" y="236" font-size="12" fill="var(--d-accent)" font-weight="600">employee_edits</text>
+        <text class="sub" x="502" y="252" font-size="10.5">durable ACID edit store · authoritative</text>
+        <!-- inner: overlay -->
+        <rect x="488" y="270" width="306" height="46" rx="9" fill="var(--ok-tint)" stroke="var(--ok)" stroke-width="1.3"/>
+        <text class="mono" x="502" y="290" font-size="12" fill="var(--ok)" font-weight="600">employee_overlay</text>
+        <text class="sub" x="502" y="306" font-size="10.5">reconcile IN-DB · sync ⊕ edits (view)</text>
+        <text class="note-txt" x="641" y="336" text-anchor="middle">optimistic concurrency / atomic multi-row edits land here, durably</text>
+
+        <!-- UC GOLD (derived) -->
+        <rect x="360" y="440" width="300" height="76" rx="11" fill="var(--surface)" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="5 4"/>
+        <text x="510" y="470" text-anchor="middle" font-size="14" fill="var(--muted)" font-weight="720">UC GOLD / BI</text>
+        <text class="sub" x="510" y="488" text-anchor="middle" font-size="10.5">BASE ⊕ derived edits · governed</text>
+        <rect x="438" y="497" width="144" height="18" rx="9" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="510" y="510" text-anchor="middle" font-size="9.5" fill="var(--muted)" font-weight="700">derived · disposable · rebuildable</text>
+
+        <!-- FLOWS -->
+        <!-- 1 ingest -->
+        <path class="f-src" marker-end="url(#ah-src)" d="M180,232 C196,232 200,206 210,200"/>
+        <text class="lbl lbl-src" x="150" y="200" text-anchor="start">① ingest</text>
+        <!-- 2 UC->LB sync -->
+        <path class="f-src" marker-end="url(#ah-src)" d="M410,188 C440,188 448,184 466,185"/>
+        <text class="lbl lbl-src" x="438" y="176" text-anchor="middle">② sync</text>
+        <!-- 3 write -->
+        <path class="f-edit" marker-end="url(#ah-edit)" d="M612,98 L612,118"/>
+        <text class="lbl lbl-edit" x="500" y="112" text-anchor="start">③ write · ACID</text>
+        <!-- read -->
+        <path class="f-read" marker-end="url(#ah-read)" d="M712,118 L712,100"/>
+        <text class="lbl lbl-read" x="722" y="112" text-anchor="start">read · ms</text>
+        <!-- 4 derived edit sync down to GOLD -->
+        <path class="f-deriv" marker-end="url(#ah-read)" d="M628,382 C628,414 620,428 612,440"/>
+        <text class="note-txt" x="636" y="410" text-anchor="start">④ derived edit copy → UC (BI only · off the app path)</text>
+        <!-- 5 BASE -> GOLD -->
+        <path class="f-src" marker-end="url(#ah-src)" d="M300,236 C290,340 330,410 388,442" opacity="0.55"/>
+        <text class="lbl lbl-src" x="262" y="360" text-anchor="start" opacity="0.7">⑤ BASE</text>
+
+        <!-- recovery annotation -->
+        <text class="note-txt" x="641" y="428" text-anchor="middle" fill="var(--ok)">↺ recovery flows Lakebase → UC (not the reverse)</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="lg-sor"><b>◆ SoR</b> = system of record</span>
+      <span class="lg-src"><i></i>source / ingest</span>
+      <span class="lg-edit"><i></i>edit / write</span>
+      <span class="lg-read"><i></i>read</span>
+      <span class="lg-deriv"><i></i>derived / disposable (BI)</span>
+    </div>
+    <figcaption>The tell: the once-separate <b>Edit Store, App-serving, and Reconcile</b> collapse into a single Lakebase box, and the Lakebase→UC arrow is now <b>dashed</b> — it carries BI data, not durability. In the plan that same arrow is solid and load-bearing.</figcaption>
+  </figure>
+
+  <h2 class="sec">How it differs from the plan (UC-owned)</h2>
+  <table>
+    <thead><tr><th>Axis</th><th class="plan">Plan — UC Delta owns edits</th><th class="this">This — Lakebase owns edits</th></tr></thead>
+    <tbody>
+      <tr><td class="axis">Edit system of record</td><td><code>employee_app_changes</code> (UC Delta)</td><td><b><code>employee_edits</code> (Lakebase Postgres)</b></td></tr>
+      <tr><td class="axis">Lakebase edit table</td><td>rebuildable <b>hot buffer</b> (cache)</td><td>the durable <b>source of truth</b></td></tr>
+      <tr><td class="axis">Lakebase→UC sync</td><td><b>on the correctness path</b> — it's your durability (MERGE bridge)</td><td><b>off the app path</b> — pure BI ETL; can lag/fail/rebuild with zero app impact</td></tr>
+      <tr><td class="axis">Durability rests on</td><td>Delta / the lakehouse (after each drain)</td><td><b>Postgres HA + PITR</b> — now your responsibility</td></tr>
+      <tr><td class="axis">Edit RPO if Lakebase lost</td><td>= drain interval (~≤2 min of edits at risk)</td><td><b>~zero</b> (durable at Postgres commit); risk shifts to BI staleness</td></tr>
+      <tr><td class="axis">Concurrency control</td><td>advisory in Postgres; final resolution is <b>last-write-wins</b> at Delta MERGE</td><td><b>authoritative in Postgres</b> — real optimistic locking, version checks, atomic multi-row edits</td></tr>
+      <tr><td class="axis">Recovery direction</td><td>rebuild Lakebase <b>from UC</b></td><td>rebuild UC <b>from Lakebase</b></td></tr>
+      <tr><td class="axis">Closest to Palantir</td><td>single edit store (UC), Funnel-like async index</td><td>fast interactive store; UC as a materialization</td></tr>
+    </tbody>
+  </table>
+
+  <div class="pick">
+    <h3>When to pick this over the plan</h3>
+    <p>When <b>write velocity/concurrency is the binding constraint</b> and you need <b>authoritative transactional edit semantics</b> — many concurrent editors, optimistic-lock conflict detection that must stick, or multi-object atomic edit batches. The plan's UC-owned buffer flattens all of that to last-write-wins at MERGE time; here it's real and durable at commit. The cost you take on: <b>Postgres becomes your durability tier</b> (HA + backups), and BI is always a lagged derived view rather than a near-equal second surface.</p>
+  </div>
+  <p class="lede" style="margin-top:16px">Note the topology is <b>~identical</b> to the plan — same five boxes. Only two things change on the canvas: the edit store fuses into the app-serving Lakebase, and the Lakebase→UC edge goes dashed. Everything else in the table follows from moving the <code>◆ SoR · edits</code> badge from UC to Lakebase.</p>
+</div>

@@ -84,11 +84,13 @@ Rendered into the bundle repo; file names namespaced by `<entity>` so repeated r
 | Per-entity **manifest** (table names, PK, editable/source col sets, lakebase conn) | `manifests/<entity>.json` | **templated** — drives the generic modules |
 | Job: apply-bridge (+ETL sim if seeded) | `resources/<entity>.job.yml` | **templated** (params → generic notebook) |
 | Pipeline (if `engine: sdp`) | `resources/<entity>.pipeline.yml` | **templated** |
-| Demo / acceptance script | `demo/run_<entity>.py` | **templated** (7 behaviors from impl-plan §7) |
+| App action routes + UI | `app/<app>/server/routes/lakebase/<entity>-routes.ts` + page | **templated** (create/edit/revert/delete behaviors from impl-plan §7) |
 
 **Generic (shipped once, NOT per-entity):**
 - `runtime/apply_bridge.py` — reads `manifests/<entity>.json`, builds the MERGE column list dynamically, runs `*_write` → `*_app_changes`. Parameterized by job widgets.
-- `runtime/actions.py` — generic `create_object / edit_property / revert_property / delete_object` driven by the manifest (editable vs source col enforcement, `pk_namespace`, tombstones). Writes only to `*_write`.
+- AppKit route helpers — generic create/edit/revert/delete SQL driven by the
+  manifest (editable vs source-column enforcement, `pk_namespace`, tombstones).
+  The Databricks App is the only action surface and writes only to `*_write`.
 - `runtime/etl_simulator.py` — synthetic data from the spec's schema; re-runnable refresh mode.
 
 **Bundle wiring:** root `databricks.yml` uses `include: [resources/*.yml]` so each new entity's job/pipeline is picked up automatically — the generator never rewrites hand-edited root config beyond ensuring that glob exists.

@@ -32,7 +32,7 @@
 | Lakebase | **new smallest instance**; database **`ontology_poc`**, schema **`public`** | None exist; smallest is enough for a POC. |
 | App identity | dedicated **service principal** (see §4 grants) | Enforces "never touch BASE" via grants, not just discipline. |
 | Apply engine (⑤) | **notebook MERGE job, Triggered every 1–2 min** for v1; upgrade to **Triggered SDP APPLY CHANGES** in Phase 5 | Faster to stand up. SDP is the scale target, not the POC blocker. |
-| Action layer | **thin notebook/SDK write surface** for v1 | POC value is the data layer, not UI. Upgrade to a Databricks App only if a live UI demo is requested. |
+| Action layer | **Databricks App only** (`app/ontology-object-demo`) | One visible, authenticated surface avoids duplicate Python and app implementations of the same action semantics. |
 | Edit model | **per-column overrides** in the edit store; `NULL` = property not overridden; reconcile with `COALESCE` (edit wins) | One model covers partial edits *and* create; also removes the whole-row shadow-copy step. |
 | Record creation | **apps create net-new objects too** (not edit-only) → **FULL OUTER** reconciliation; app-created PKs use an **`app-` namespace** so upstream can never collide | Confirmed requirement. Edit-only (LEFT JOIN) rejected. |
 | Edit audit | **Delta CDF on `*_app_changes`** is the audit trail (who/when/before→after) | Near-free; avoids a separate journal table for v1. |
@@ -212,15 +212,18 @@ Replace the notebook MERGE bridge with a Triggered Lakeflow Declarative Pipeline
 
 ---
 
-## 5. Action layer (thin write surface)
-Notebook/SDK (`src/action/apply_action.py`). Writes **only** to `employee_write`; every op bumps `updated_at`; then read-back via `employee_overlay` to confirm immediate visibility. Four distinct operations (this is the fix — edit, revert, and delete are *not* the same thing):
+## 5. Action layer (Databricks App)
+The AppKit routes in `app/ontology-object-demo/server/routes/lakebase/employee-routes.ts`
+are the **only** action surface. They write only to `employee_write`, bump
+`updated_at`, and read back through `employee_overlay` for immediate visibility.
+There is no parallel Python action SDK or CLI. Four distinct operations remain:
 
 | Op | What it does | Write-store effect |
 |---|---|---|
-| **create_object**(props) | new object upstream never had | generate `employee_id = 'app-'||uuid` (unless supplied); `INSERT` full row, `is_new=true`, `is_deleted=false`. Source-class cols required here. |
-| **edit_property**(pk, {salary?, status?}) | override an editable prop on an existing object | `INSERT ... ON CONFLICT (employee_id) DO UPDATE` setting only the given **editable** cols. **Reject** any source-class col for an existing object. |
-| **revert_property**(pk, prop) | undo an edit → fall back to source | `UPDATE ... SET <prop> = NULL`. `COALESCE` then picks BASE. (For an `is_new` object there is no BASE — a full revert = delete_object.) |
-| **delete_object**(pk) | hide the object entirely | upsert `is_deleted = true` (tombstone). Works for upstream-backed *and* app-created objects. `undelete` = set `false`. |
+| `POST /api/employees` | new object upstream never had | generate `employee_id = 'app-'||uuid`; `INSERT` full row, `is_new=true`, `is_deleted=false`. Source-class cols required here. |
+| `PATCH /api/employees/:id` | override an editable property | `INSERT ... ON CONFLICT DO UPDATE` for `salary` and/or `status`; the request schema rejects source-class columns. |
+| `POST /api/employees/:id/revert` | undo an edit → fall back to source | `UPDATE ... SET <prop> = NULL`; `COALESCE` then picks BASE. App-created objects cannot revert to a missing source. |
+| `DELETE /api/employees/:id` | hide the object entirely | upsert `is_deleted=true` tombstone for upstream-backed or app-created objects. |
 
 **Never physically `DELETE` a `*_write` row in these ops** — revert/delete are *state changes* (NULL / `is_deleted`); removing the row would strand the stale value in `*_app_changes` and break propagation. Physical purge is the separate, careful Phase-4 step.
 
@@ -240,28 +243,26 @@ src/
   notebooks/
     etl_simulator.py
     apply_bridge.py
-  action/
-    apply_action.py
   lakebase/                    # managed via databricks-lakebase CLI/SDK, NOT DABs
     instance.md                # provisioning steps + flags
     employee_write.sql
     employee_overlay.sql
     synced_table.md            # create-synced-database-table config
-demo/
-  run_demo.py                  # the 5-behavior acceptance script (§7)
+app/
+  ontology-object-demo/        # sole create/edit/revert/delete surface
 ```
 Deploy: `databricks bundle deploy --profile fevm-serverless` (confirm via skill). Lakebase objects run through their own CLI/SDK steps.
 
 ---
 
-## 7. Acceptance — the behaviors (build `demo/run_demo.py`)
-Prove end-to-end, in order:
-1. **Edit propagation:** `edit_property` on `salary` → immediate in `employee_overlay` → after next bridge run appears in `employee_app_changes` → wins in `employee_gold`.
-2. **Create:** `create_object` (`app-…`) → immediate in overlay → flows to `employee_app_changes` → appears in GOLD, and **never** in BASE.
+## 7. Acceptance — the behaviors (run through the Databricks App)
+Use the Object Storage Lab UI and the ETL/bridge jobs to prove, in order:
+1. **Edit propagation:** edit `salary` in the app → immediate in `employee_overlay` → after next bridge run appears in `employee_app_changes` → wins in `employee_gold`.
+2. **Create:** create an employee in the app (`app-…`) → immediate in overlay → flows to `employee_app_changes` → appears in GOLD, and **never** in BASE.
 3. **Refresh resilience:** re-run ETL to change salary of an **edited** row in BASE → GOLD still shows the edit.
 4. **Non-edited refresh:** ETL changes a **non-edited** row → new source value flows to GOLD.
-5. **Revert edit:** `revert_property(salary)` → after bridge run, GOLD `salary` reverts to the **BASE** value (edit undone). *(This is the corrected behavior — revert ≠ delete.)*
-6. **Delete object:** `delete_object` → tombstone → object hidden from overlay **and** GOLD (test on both an upstream-backed and an app-created object).
+5. **Revert edit:** click **Revert salary** → after bridge run, GOLD `salary` reverts to the **BASE** value (edit undone). *(Revert ≠ delete.)*
+6. **Delete object:** delete through the app → tombstone → object hidden from overlay **and** GOLD (test on both an upstream-backed and an app-created object).
 7. **BASE immutability:** show via `employee_base` history/CDF + the grant check that the app SP never modified BASE.
 
 ---

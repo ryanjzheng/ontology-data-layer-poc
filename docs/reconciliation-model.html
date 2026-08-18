@@ -1,0 +1,225 @@
+<title>Reconciliation Model</title>
+<style>
+  :root {
+    --bg: #F4F5F8;
+    --surface: #FFFFFF;
+    --ink: #1C222B;
+    --muted: #5B6572;
+    --hair: #D9DEE6;
+    --p-accent: #45577D;   /* source / governed truth — slate indigo */
+    --p-box: #EEF1F6;
+    --p-tint: rgba(69,87,125,0.06);
+    --d-accent: #CF4A22;   /* Databricks serving — lava */
+    --d-box: #FBEEE9;
+    --d-tint: rgba(207,74,34,0.06);
+    --ok: #2F855A;         /* the edit layer / precedence brain — green */
+    --ok-tint: rgba(47,133,90,0.10);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #12151B; --surface: #1A1F27; --ink: #E7EBF1; --muted: #9AA4B2; --hair: #2B323D;
+      --p-accent: #93A7CD; --p-box: #1F2733; --p-tint: rgba(147,167,205,0.11);
+      --d-accent: #F1855F; --d-box: #2A1F19; --d-tint: rgba(241,133,95,0.10);
+      --ok: #58BE92; --ok-tint: rgba(88,190,146,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151B; --surface: #1A1F27; --ink: #E7EBF1; --muted: #9AA4B2; --hair: #2B323D;
+    --p-accent: #93A7CD; --p-box: #1F2733; --p-tint: rgba(147,167,205,0.11);
+    --d-accent: #F1855F; --d-box: #2A1F19; --d-tint: rgba(241,133,95,0.10);
+    --ok: #58BE92; --ok-tint: rgba(88,190,146,0.14);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: clamp(28px,5vw,60px) clamp(18px,4vw,40px) 64px; }
+
+  .kicker { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; color: var(--muted); margin: 0 0 12px; }
+  h1 { font-size: clamp(26px,4.5vw,38px); line-height: 1.12; letter-spacing: -0.02em; text-wrap: balance; margin: 0 0 12px; font-weight: 760; }
+  .lede { font-size: clamp(15px,1.9vw,17px); color: var(--muted); max-width: 68ch; margin: 0 0 22px; }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  figure { margin: 0; }
+  .figscroll { overflow-x: auto; }
+  svg.map { display: block; width: 100%; height: auto; min-width: 720px; }
+
+  /* boxes */
+  .box-src   { fill: var(--p-box);   stroke: var(--p-accent); stroke-width: 1.4; }
+  .box-edit  { fill: var(--surface); stroke: var(--ok);       stroke-width: 2.2; }
+  .box-brain { fill: var(--surface); stroke: var(--ink);      stroke-width: 1.8; }
+  .box-serve { fill: var(--d-box);   stroke: var(--d-accent); stroke-width: 1.4; }
+  .box-actor { fill: var(--surface); stroke: var(--hair);     stroke-width: 1.4; }
+  .pill      { fill: var(--ok-tint); stroke: var(--ok); stroke-width: 1; }
+
+  /* text */
+  .t-src   { fill: var(--p-accent); font-family: var(--font-sans); font-weight: 720; }
+  .t-edit  { fill: var(--ok);       font-family: var(--font-sans); font-weight: 720; }
+  .t-brain { fill: var(--ink);      font-family: var(--font-sans); font-weight: 730; }
+  .t-serve { fill: var(--d-accent); font-family: var(--font-mono); font-weight: 600; }
+  .t-actor { fill: var(--ink);      font-family: var(--font-sans); font-weight: 700; }
+  .sub     { fill: var(--muted);    font-family: var(--font-sans); }
+  .t-pill  { fill: var(--ok);       font-family: var(--font-sans); font-weight: 700; }
+
+  /* flows */
+  .f-src  { stroke: var(--p-accent); stroke-width: 1.8; fill: none; }
+  .f-edit { stroke: var(--d-accent); stroke-width: 2.0; fill: none; }
+  .f-read { stroke: var(--muted);    stroke-width: 1.7; fill: none; }
+  .f-bi   { stroke: var(--muted);    stroke-width: 1.7; fill: none; stroke-dasharray: 5 4; opacity: 0.85; }
+  .h-src  { fill: var(--p-accent); }
+  .h-edit { fill: var(--d-accent); }
+  .h-read { fill: var(--muted); }
+  .lbl        { font-family: var(--font-sans); font-size: 11px; font-weight: 700; }
+  .lbl-src    { fill: var(--p-accent); }
+  .lbl-edit   { fill: var(--d-accent); }
+  .lbl-read   { fill: var(--muted); }
+  .note-txt   { fill: var(--muted); font-family: var(--font-sans); font-size: 10.5px; font-style: italic; }
+
+  figcaption { margin-top: 14px; font-size: 12.5px; color: var(--muted); text-align: center; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 20px 0 0; font-size: 12.5px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 22px; height: 0; border-top-width: 2.4px; border-top-style: solid; display: inline-block; }
+  .lg-src i  { border-color: var(--p-accent); }
+  .lg-edit i { border-color: var(--d-accent); }
+  .lg-read i { border-color: var(--muted); }
+  .lg-bi i   { border-color: var(--muted); border-top-style: dashed; }
+
+  h2.sec { font-size: clamp(18px,2.4vw,22px); letter-spacing: -0.015em; font-weight: 730; margin: 40px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  td.trace { white-space: nowrap; font-weight: 700; color: var(--ink); }
+  td.trace b { color: var(--d-accent); }
+  code { font-family: var(--font-mono); font-size: 0.88em; background: var(--p-tint); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+
+  .cols { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
+  @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--hair); border-radius: 12px; padding: 16px 18px; background: var(--surface); }
+  .card h3 { margin: 0 0 4px; font-size: 14.5px; }
+  .card h3 .when { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+  .card p { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  .card p b { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <p class="kicker">Ontology Data Layer POC · first-principles model</p>
+  <h1>Reconciling two writers into one servable truth</h1>
+  <p class="lede">Not a copy of Palantir — the <b>irreducible</b> problem underneath it. Two writers of different authority (<b>upstream source</b> vs <b>app edits</b>) meet at one <b>reconcile</b> step governed by a <b>per-property precedence policy</b>, and fan out to a fast app read and a governed BI read. Trace any scenario along the numbered, color-coded flows.</p>
+
+  <figure>
+    <div class="figscroll">
+      <svg class="map" viewBox="0 0 1020 560" role="img" aria-label="First-principles reconciliation model. Upstream ETL ingests into UC BASE, the source of truth that the app never mutates. Apps and users apply edits only to a separate, reversible Edit Store, never to BASE. A central Reconcile step combines the source and the edits under a per-property precedence policy, then serves a fast app read surface on Lakebase and an asynchronous governed BI surface on UC Gold. Reverting an edit makes reconciliation fall back to the source value.">
+        <defs>
+          <marker id="ah-src"  viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="h-src"  d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ah-edit" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path class="h-edit" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="ah-read" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="h-read" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <rect x="24" y="70" width="972" height="466" rx="18" fill="var(--p-tint)" stroke="var(--hair)"/>
+
+        <!-- ACTOR -->
+        <rect class="box-actor" x="560" y="92" width="210" height="56" rx="10"/>
+        <text class="t-actor" x="665" y="117" text-anchor="middle" font-size="14">Apps · Users · Agents</text>
+        <text class="sub" x="665" y="135" text-anchor="middle" font-size="11">reads objects · applies edits</text>
+
+        <!-- UPSTREAM -->
+        <rect class="box-src" x="40" y="296" width="150" height="68" rx="10"/>
+        <text class="t-src" x="115" y="326" text-anchor="middle" font-size="13.5">Upstream ETL</text>
+        <text class="sub" x="115" y="344" text-anchor="middle" font-size="10.5">source producer</text>
+
+        <!-- UC BASE -->
+        <rect class="box-src" x="236" y="214" width="214" height="82" rx="11"/>
+        <text class="t-src" x="343" y="245" text-anchor="middle" font-size="15">UC BASE</text>
+        <text class="sub" x="343" y="264" text-anchor="middle" font-size="11">source of truth · Delta + CDF</text>
+        <text class="sub" x="343" y="281" text-anchor="middle" font-size="10.5" font-style="italic">never mutated by the app</text>
+
+        <!-- EDIT STORE (the pivot) -->
+        <rect class="box-edit" x="236" y="402" width="214" height="82" rx="11"/>
+        <text class="t-edit" x="343" y="432" text-anchor="middle" font-size="15">Edit Store</text>
+        <text class="sub" x="343" y="451" text-anchor="middle" font-size="11">separate · sparse · reversible</text>
+        <text class="sub" x="343" y="468" text-anchor="middle" font-size="10.5" font-style="italic">one authoritative copy</text>
+
+        <!-- RECONCILE (brain) -->
+        <rect class="box-brain" x="536" y="290" width="214" height="114" rx="12"/>
+        <text class="t-brain" x="643" y="318" text-anchor="middle" font-size="15.5">Reconcile</text>
+        <text class="sub" x="643" y="337" text-anchor="middle" font-size="11.5">source ⊕ edits</text>
+        <rect class="pill" x="548" y="352" width="190" height="40" rx="9"/>
+        <text class="t-pill" x="643" y="369" text-anchor="middle" font-size="10.5">⑨ per-property</text>
+        <text class="t-pill" x="643" y="384" text-anchor="middle" font-size="10.5">precedence policy</text>
+
+        <!-- APP-SERVING -->
+        <rect class="box-serve" x="826" y="238" width="168" height="74" rx="10"/>
+        <text class="t-serve" x="910" y="268" text-anchor="middle" font-size="13.5">App-serving</text>
+        <text class="sub" x="910" y="286" text-anchor="middle" font-size="10.5">Lakebase · fast R/W</text>
+
+        <!-- BI -->
+        <rect class="box-serve" x="826" y="428" width="168" height="74" rx="10"/>
+        <text class="t-serve" x="910" y="458" text-anchor="middle" font-size="13">UC GOLD / BI</text>
+        <text class="sub" x="910" y="476" text-anchor="middle" font-size="10.5">governed · lagged</text>
+
+        <!-- FLOWS -->
+        <!-- ① ingest -->
+        <path class="f-src"  marker-end="url(#ah-src)"  d="M167,296 C167,268 210,286 232,272"/>
+        <text class="lbl lbl-src" x="150" y="286" text-anchor="start">① ingest / re-ingest</text>
+        <!-- ④ source in -->
+        <path class="f-src"  marker-end="url(#ah-src)"  d="M450,266 C495,266 500,306 532,320"/>
+        <text class="lbl lbl-src" x="462" y="292" text-anchor="start">④ source</text>
+        <!-- ⑤ edits in -->
+        <path class="f-edit" marker-end="url(#ah-edit)" d="M450,432 C495,432 500,392 532,376"/>
+        <text class="lbl lbl-edit" x="452" y="418" text-anchor="start">⑤ edits</text>
+        <!-- ③ edit write (actor -> edit store), threads the BASE/Reconcile gap -->
+        <path class="f-edit" marker-end="url(#ah-edit)" d="M598,148 C512,214 505,352 452,398"/>
+        <text class="lbl lbl-edit" x="512" y="240" text-anchor="start">③ edit · never BASE</text>
+        <!-- ② read (serving -> actor) -->
+        <path class="f-read" marker-end="url(#ah-read)" d="M888,238 C900,188 812,152 742,151"/>
+        <text class="lbl lbl-read" x="800" y="186" text-anchor="middle">② read</text>
+        <!-- ⑥ serve -->
+        <path class="f-read" marker-end="url(#ah-read)" d="M750,322 C790,322 800,296 822,286"/>
+        <text class="lbl lbl-read" x="758" y="302" text-anchor="start">⑥ serve</text>
+        <!-- ⑦ BI materialize (lagged) -->
+        <path class="f-bi"   marker-end="url(#ah-read)" d="M750,378 C790,378 800,438 822,452"/>
+        <text class="lbl lbl-read" x="756" y="420" text-anchor="start">⑦ BI · lagged</text>
+
+        <!-- ⑧ revert note -->
+        <text class="note-txt" x="343" y="504" text-anchor="middle">⑧ revert / drop edit → reconcile falls back to ④ source</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span class="lg-src"><i></i>source / ingest</span>
+      <span class="lg-edit"><i></i>edit / write (never touches BASE)</span>
+      <span class="lg-read"><i></i>read / serve</span>
+      <span class="lg-bi"><i></i>BI materialization (async)</span>
+    </div>
+    <figcaption>The invariant: source and edits are separate stores; they only meet at <b>Reconcile</b>, governed by a <b>per-property</b> policy — not a blanket “edits always win.” Everything else is where you place these logical nodes physically (see below).</figcaption>
+  </figure>
+
+  <h2 class="sec">Scenarios to play</h2>
+  <table>
+    <thead><tr><th>Scenario</th><th>Trace</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>App reads an object</td><td class="trace">⑥ ← (④ ⊕ ⑤ via ⑨) → ②</td><td>Reconciled value, edit precedence applied per property, served fast.</td></tr>
+      <tr><td>User edits a property</td><td class="trace"><b>③</b> → ⑤ → ⑥ → ②</td><td>Lands only in the Edit Store; visible on next read. <b>BASE untouched.</b></td></tr>
+      <tr><td>Upstream re-ingests an <b>edited</b> row</td><td class="trace">① → ④ → <b>⑨</b></td><td>Policy decides: <code>edit-wins</code> keeps the edit (refresh-resilient); <code>source-authoritative</code> lets the fresh source override.</td></tr>
+      <tr><td>Upstream re-ingests a <b>non-edited</b> row</td><td class="trace">① → ④ → ⑥/⑦</td><td>No edit to win; new source value flows straight through.</td></tr>
+      <tr><td>Revert / drop an edit</td><td class="trace"><b>⑧</b> → ⑤ empty → ④</td><td>Reconcile falls back to the (possibly newly-refreshed) source value.</td></tr>
+      <tr><td>BI / analytics query</td><td class="trace">④ ⊕ ⑤ via ⑨ → ⑦</td><td>Same precedence, materialized asynchronously — lags the app read by the refresh cadence.</td></tr>
+      <tr><td><b>Conflict:</b> user edited field X, upstream pushes an authoritative X</td><td class="trace"><b>⑨</b> (per field)</td><td>The case where “edits always win” is a <b>bug</b>. Per-property policy is what resolves it correctly.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">Where the logical nodes live physically (the UC ⊕ Lakebase fork)</h2>
+  <p class="lede" style="margin-bottom:0">Pick <b>one</b> authoritative owner for the Edit Store based on edit write velocity; the other engine holds a <em>derived</em> copy. This is what makes the mapping clean instead of maintaining two durable edit copies.</p>
+  <div class="cols">
+    <div class="card">
+      <h3>Edits owned by Lakebase <span class="when">— high-concurrency interactive writes</span></h3>
+      <p><b>Edit Store + App-serving = the same Lakebase</b> (Postgres is durable + transactional). <b>UC BASE</b> = source. <b>Reconcile</b> = a Postgres overlay for the app + a periodic sync to <b>UC GOLD</b> for BI (the UC edit copy is derived/disposable).</p>
+    </div>
+    <div class="card">
+      <h3>Edits owned by UC Delta <span class="when">— low / batchy edits</span></h3>
+      <p><b>Edit Store = UC <code>app_changes</code></b> (one engine, no reverse-sync seam). <b>App-serving Lakebase = a read-through cache</b> of the reconciled view. Closest to Palantir’s single edit store; simplest to operate.</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:16px">The two facts that pick the branch — <b>does upstream re-ingest edited rows?</b> (if no, you don’t need this at all) and <b>what’s the edit write velocity?</b> (picks the owner).</p>
+</div>

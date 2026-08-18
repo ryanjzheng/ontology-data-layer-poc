@@ -1,32 +1,35 @@
 from pathlib import Path
 
-import pytest
-
-from src.action.apply_action import EDITABLE_PROPERTIES, EmployeeActionStore
-
 ROOT = Path(__file__).resolve().parents[1]
+ACTION_ROUTES = (
+    ROOT
+    / "app/ontology-object-demo/server/routes/lakebase/employee-routes.ts"
+).read_text()
+
+
+def test_app_is_the_only_action_surface() -> None:
+    assert not (ROOT / "src/action/apply_action.py").exists()
+    assert not (ROOT / "src/action/__init__.py").exists()
+    assert not (ROOT / "demo/run_demo.py").exists()
+
+
+def test_app_actions_write_only_to_employee_write() -> None:
+    assert "INSERT INTO public.employee_write" in ACTION_ROUTES
+    assert "UPDATE public.employee_write" in ACTION_ROUTES
+    assert "employee_base" not in ACTION_ROUTES
 
 
 def test_app_created_ids_are_namespaced() -> None:
-    EmployeeActionStore._require_app_id("app-123")
-    with pytest.raises(ValueError, match="must start"):
-        EmployeeActionStore._require_app_id("emp-00001")
+    assert "const employeeId = `app-${randomUUID()}`" in ACTION_ROUTES
 
 
-def test_action_layer_rejects_source_owned_properties_before_connecting() -> None:
-    store = object.__new__(EmployeeActionStore)
-    with pytest.raises(ValueError, match="Only"):
-        store.edit_property("emp-00001", editor="test", first_name="Not allowed")
-
-
-def test_action_layer_requires_at_least_one_edit() -> None:
-    store = object.__new__(EmployeeActionStore)
-    with pytest.raises(ValueError, match="At least one"):
-        store.edit_property("emp-00001", editor="test")
-
-
-def test_only_salary_and_status_are_editable() -> None:
-    assert EDITABLE_PROPERTIES == {"salary", "status"}
+def test_app_edit_and_revert_contract_is_limited_to_editable_properties() -> None:
+    edit_schema = ACTION_ROUTES.split("const EditEmployeeBody", 1)[1].split(
+        "const RevertBody", 1
+    )[0]
+    assert "Provide salary or status" in edit_schema
+    assert "firstName" not in edit_schema
+    assert "z.enum(['salary', 'status'])" in ACTION_ROUTES
 
 
 def test_overlay_contract_is_full_outer_and_tombstone_aware() -> None:

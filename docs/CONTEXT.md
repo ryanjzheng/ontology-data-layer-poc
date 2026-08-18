@@ -112,7 +112,7 @@ WHERE coalesce(a.is_deleted, false) = false;
 | Object primary key | `<PK_COLS>` shared across BASE / `*_write` / `*_app_changes` |
 | Revert an edit (fall back to source) | NULL the override column in `*_write` / `*_app_changes` → `COALESCE` picks BASE |
 | Delete an object | `is_deleted` tombstone in `*_write` / `*_app_changes`, honored in overlay + GOLD |
-| Create a net-new object | `create_object` → new row in `*_write`, `app-<uuid>` PK, `is_new=true`; FULL OUTER surfaces it |
+| Create a net-new object | App `POST /api/employees` → new row in `*_write`, `app-<uuid>` PK, `is_new=true`; FULL OUTER surfaces it |
 | Computed property | Derived column in the GOLD/MV definition |
 | "Drop all edits" | Truncate `*_write` + `*_app_changes` (fall back to BASE) |
 
@@ -134,9 +134,12 @@ Build (concrete DDL + steps in `IMPLEMENTATION_PLAN.md`):
    - Notebook/job: **upstream ETL simulator** that refreshes BASE (to demo refresh resilience).
    - Notebook/job: **`*_write` → `*_app_changes`** (APPLY CHANGES, or notebook MERGE bridge first) on a 1–2 min trigger.
    - Notebook/job or MV: **GOLD = BASE ⊕ APP_CHANGES** with precedence.
-6. **Very lightweight action layer** — a thin write-back surface (small app / API / notebook) that reads the overlay (`*_sync ⊕ *_write`) and writes **only** to Lakebase `*_write`, via four operations: **create_object · edit_property · revert_property · delete_object**. Demonstrates Palantir "Action" semantics. Keep it minimal — the POC is about the data layer, not the UI.
+6. **Databricks App action layer** — the Object Storage Lab reads the overlay
+   (`*_sync ⊕ *_write`) and writes **only** to Lakebase `*_write` through
+   AppKit routes for create, edit, revert, and delete. It is the sole action
+   surface; there is no parallel Python action SDK or CLI.
 
-**Demo script (acceptance):**
+**App demo (acceptance):**
 - App edits a property → appears immediately in overlay read → flows to `*_app_changes` → wins in GOLD.
 - App **creates** a net-new object (`app-…`) → immediate in overlay → flows to `*_app_changes` → appears in GOLD, never in BASE.
 - Upstream ETL refreshes BASE for an edited row → edit still wins in GOLD (refresh resilience).
@@ -183,7 +186,11 @@ Mirrors Doc 2 §4. Each phase has a clear "done when".
 
 ## 8. Decisions (locked) & genuinely-open items
 
-These are now **locked in `IMPLEMENTATION_PLAN.md` §1**: entity `employee`; catalog `ontology_poc.object_layer`; new smallest Lakebase instance (DB `ontology_poc`) + dedicated app SP; thin notebook/SDK action surface; notebook-MERGE bridge first (SDP later); **record creation supported**; Link Types deferred (§10 of the plan). Do not re-open them here.
+These are now **locked in `IMPLEMENTATION_PLAN.md` §1**: entity `employee`;
+existing UC catalog + `object_layer`; smallest Lakebase project (DB
+`ontology_poc`) + dedicated Databricks App SP; AppKit-only action surface;
+notebook-MERGE bridge first (SDP later); **record creation supported**; Link
+Types deferred (§10 of the plan). Do not re-open them here.
 
 **Genuinely open** (decide at implementation — see `IMPLEMENTATION_PLAN.md` §9): Lakebase instance size/region flags; Lakebase read method in the bridge (JDBC vs SDK); GOLD as Materialized View vs plain view.
 

@@ -158,12 +158,103 @@
   .note.scope .tag  { color: var(--p-accent); }
   .note p { margin: 0; font-size: 13px; color: var(--muted); }
   .note code { font-family: var(--font-mono); font-size: 0.9em; color: var(--ink); }
+
+  /* section subhead + architecture-diagram flow arrows */
+  .sec {
+    font-size: clamp(19px, 2.6vw, 24px);
+    letter-spacing: -0.015em;
+    font-weight: 730;
+    margin: 4px 0 6px;
+  }
+  .sec-lede {
+    font-size: clamp(14px, 1.7vw, 15.5px);
+    color: var(--muted);
+    max-width: 64ch;
+    margin: 0 0 22px;
+  }
+  .sec-lede b { color: var(--ink); font-weight: 640; }
+  .flow      { stroke: var(--p-accent); stroke-width: 1.6; fill: none; opacity: 0.85; }
+  .arrowhead { fill: var(--p-accent); }
+  .edge      { fill: var(--muted); font-family: var(--font-sans); font-size: 10.5px; font-style: italic; }
+  .box-wide  { fill: var(--surface); stroke: var(--p-accent); stroke-width: 1.5; }
 </style>
 
 <div class="wrap">
   <p class="kicker">Ontology Data Layer POC</p>
   <h1>Object Storage V2, mapped onto Databricks</h1>
   <p class="lede">The same object-storage behaviors, two sides. <b>Palantir Object Storage V2</b> as the conceptual model; <b>Unity Catalog ⊕ Lakebase</b> as the concrete build. Layers that sit at the same height are the same capability — the ✓ marks a faithful behavioral match.</p>
+
+  <h2 class="sec">How Object Storage V2 works</h2>
+  <p class="sec-lede">V2 decouples the three things V1 (Phonograph) fused together — <b>indexing</b>, <b>edit tracking</b>, and <b>read serving</b>. Source data and user edits enter a single indexing engine (<b>Funnel</b>), which merges them into a live indexed store where edits win. Two read surfaces come out: an immediate object read, and an optional async materialized dataset.</p>
+
+  <figure>
+    <div class="figscroll">
+      <svg class="map" viewBox="0 0 1000 624" role="img" aria-label="Palantir Object Storage V2 backend architecture. Three inputs feed the Object Data Funnel: the backing datasource (upstream source data), the Ontology Metadata Service (schema), and the Actions service (user edits, originating from apps). Funnel runs batch and streaming indexing pipelines and applies edit offsets, writing into the object databases — an indexed store holding the backing index merged with edit offsets, where edits win and are immediately visible. Two read surfaces emerge from the object databases: OSS, which serves immediate object reads under 100 milliseconds to apps and the OSDK, and optional materialized datasets, which propagate the merged source-plus-edits state asynchronously to downstream pipelines and BI.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="arrowhead" d="M0,0 L10,5 L0,10 z"/>
+          </marker>
+        </defs>
+
+        <!-- backdrop -->
+        <rect class="panel-p" x="40" y="92" width="920" height="520" rx="18"/>
+
+        <!-- external actor note -->
+        <text class="sub" x="801" y="126" text-anchor="middle" font-size="11">Apps · UI · Agents  —  Apply Action ↓</text>
+
+        <!-- ROW 1 — inputs -->
+        <rect class="box-p" x="64" y="140" width="270" height="66" rx="10"/>
+        <text class="t-p" x="199" y="169" text-anchor="middle" font-size="15">Backing datasource</text>
+        <text class="sub" x="199" y="189" text-anchor="middle" font-size="11.5">source · upstream ETL · read-only</text>
+
+        <rect class="box-p" x="365" y="140" width="270" height="66" rx="10"/>
+        <text class="t-p" x="500" y="169" text-anchor="middle" font-size="15">OMS</text>
+        <text class="sub" x="500" y="189" text-anchor="middle" font-size="11.5">object-type &amp; property schema</text>
+
+        <rect class="box-p" x="666" y="140" width="270" height="66" rx="10"/>
+        <text class="t-p" x="801" y="169" text-anchor="middle" font-size="15">Actions service</text>
+        <text class="sub" x="801" y="189" text-anchor="middle" font-size="11.5">validates · applies edits</text>
+
+        <!-- inputs → Funnel -->
+        <path class="flow" marker-end="url(#arrow)" d="M199,206 C199,244 340,238 344,266"/>
+        <path class="flow" marker-end="url(#arrow)" d="M500,206 L500,266"/>
+        <path class="flow" marker-end="url(#arrow)" d="M801,206 C801,244 660,238 656,266"/>
+        <text class="edge" x="512" y="242" text-anchor="start">schema</text>
+        <text class="edge" x="726" y="240" text-anchor="start">edit offsets</text>
+
+        <!-- ROW 2 — Funnel -->
+        <rect class="box-wide" x="220" y="270" width="560" height="72" rx="12"/>
+        <text class="t-p" x="500" y="300" text-anchor="middle" font-size="16">Object Data Funnel</text>
+        <text class="sub" x="500" y="322" text-anchor="middle" font-size="11.5">batch + streaming indexing pipelines · incremental indexing · applies edit offsets</text>
+
+        <!-- Funnel → object DB -->
+        <path class="flow" marker-end="url(#arrow)" d="M500,342 L500,398"/>
+
+        <!-- ROW 3 — object databases (indexed store) -->
+        <rect class="box-wide" x="220" y="400" width="560" height="72" rx="12"/>
+        <text class="t-p" x="500" y="430" text-anchor="middle" font-size="16">Object databases · indexed store</text>
+        <text class="sub" x="500" y="452" text-anchor="middle" font-size="11.5">backing index ⊕ edit offsets — edits win · immediate visibility</text>
+
+        <!-- object DB → read surfaces -->
+        <path class="flow" marker-end="url(#arrow)" d="M430,472 C400,500 320,494 300,516"/>
+        <path class="flow" marker-end="url(#arrow)" d="M570,472 C600,500 690,494 710,516"/>
+        <text class="edge" x="300" y="504" text-anchor="middle">immediate</text>
+        <text class="edge" x="712" y="504" text-anchor="middle">async ~min</text>
+
+        <!-- ROW 4 — read surfaces -->
+        <rect class="box-p" x="120" y="520" width="340" height="66" rx="10"/>
+        <text class="t-p" x="290" y="549" text-anchor="middle" font-size="15">OSS · read serving</text>
+        <text class="sub" x="290" y="569" text-anchor="middle" font-size="11.5">object reads &lt;100ms → Apps / OSDK</text>
+
+        <rect class="box-p" x="540" y="520" width="340" height="66" rx="10"/>
+        <text class="t-p" x="710" y="549" text-anchor="middle" font-size="15">Materialized datasets <tspan class="sub" font-size="11.5">(optional)</tspan></text>
+        <text class="sub" x="710" y="569" text-anchor="middle" font-size="11.5">source ⊕ edits · downstream pipelines &amp; BI</text>
+      </svg>
+    </div>
+    <figcaption>V2 object backend: <b>Funnel</b> is the single indexing engine; the object databases hold the live merged state (edits win, immediately visible); reads split into <b>OSS</b> (immediate) and optional <b>materialized datasets</b> (async). Materializations replace V1’s mandatory writeback dataset — in V2 they are optional. “Drop all edits” resets the edit offsets back to pure source.</figcaption>
+  </figure>
+
+  <h2 class="sec">The same behaviors, on Databricks</h2>
 
   <figure>
     <div class="figscroll">
