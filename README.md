@@ -21,7 +21,7 @@ tombstones.
 databricks bundle deploy -t dev --profile fevm-serverless
 databricks bundle run setup_ontology -t dev --profile fevm-serverless
 databricks bundle run etl_simulator -t dev --profile fevm-serverless
-uv run python src/lakebase/setup.py --profile fevm-serverless
+uv run python src/core/lakebase/setup.py --profile fevm-serverless
 ```
 
 ## Action surface

@@ -34,3 +34,51 @@ test('object storage console loads', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Create object' })).toBeVisible();
   await expect(page.getByLabel('Search employees')).toBeVisible();
 });
+
+test('revert refreshes the controlled edit fields', async ({ page }) => {
+  const edited = {
+    employee_id: 'emp-test',
+    first_name: 'Test Employee',
+    department: 'Validation',
+    hire_date: '2026-08-18',
+    salary: '333333.00',
+    status: 'active',
+    source_salary: '93183.00',
+    source_status: 'active',
+    salary_override: '333333.00',
+    status_override: null,
+    is_new: false,
+    is_deleted: false,
+    editor: 'tester@databricks.com',
+    updated_at: '2026-08-18T12:00:00Z',
+    object_origin: 'app-edited',
+  };
+  const reverted = {
+    ...edited,
+    salary: '93183.00',
+    salary_override: null,
+    updated_at: '2026-08-18T12:01:00Z',
+  };
+  let isReverted = false;
+
+  await page.route('**/api/employees**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'POST' && url.pathname.endsWith('/revert')) {
+      isReverted = true;
+      await route.fulfill({ json: reverted });
+      return;
+    }
+    if (url.pathname === '/api/employees/emp-test') {
+      await route.fulfill({ json: isReverted ? reverted : edited });
+      return;
+    }
+    await route.fulfill({ json: [isReverted ? reverted : edited] });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Inspect' }).click();
+  await expect(page.getByLabel('Salary override')).toHaveValue('333333.00');
+  await page.getByRole('button', { name: 'Revert salary' }).click();
+  await expect(page.getByLabel('Salary override')).toHaveValue('93183.00');
+});

@@ -17,4 +17,4 @@ resources:
       tasks:
         - task_key: trickle_into_employee_base
           notebook_task:
-            notebook_path: ../src/notebooks/etl_trickle.py
+            notebook_path: ../src/demo/etl_trickle.py
