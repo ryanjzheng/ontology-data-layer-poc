@@ -179,6 +179,8 @@ export function LakebasePage() {
   const refreshSelected = async (employeeId: string) => {
     const employee = await api<Employee>(`/api/employees/${encodeURIComponent(employeeId)}`);
     setSelected(employee);
+    setEditSalary(employee.salary ?? '');
+    setEditStatus(employee.status ?? 'active');
     setEmployees((current) => current.map((item) => (item.employee_id === employee.employee_id ? employee : item)));
   };
 
