@@ -10,4 +10,4 @@ resources:
       tasks:
         - task_key: create_uc_objects
           notebook_task:
-            notebook_path: ../src/notebooks/setup_ontology.py
+            notebook_path: ../src/core/setup_ontology.py

@@ -27,4 +27,4 @@ resources:
         - task_key: merge_employee_writes
           environment_key: lakebase
           notebook_task:
-            notebook_path: ../src/notebooks/apply_bridge.py
+            notebook_path: ../src/core/apply_bridge.py

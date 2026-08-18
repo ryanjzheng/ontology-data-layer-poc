@@ -74,13 +74,13 @@ Rendered into the bundle repo; file names namespaced by `<entity>` so repeated r
 
 | Artifact | Path | Templated or generic |
 |---|---|---|
-| BASE table DDL (+CDF) | `src/ddl/<entity>_base.sql` | **templated** (column list) |
-| `*_app_changes` DDL (+CDF, full column set + control cols) | `src/ddl/<entity>_app_changes.sql` | **templated** |
-| GOLD MV (FULL OUTER, per-column COALESCE, computed exprs, tombstone filter) | `src/ddl/<entity>_gold.sql` | **templated** |
-| Lakebase `*_write` DDL | `src/lakebase/<entity>_write.sql` | **templated** (Postgres types) |
-| Lakebase overlay view (FULL OUTER) | `src/lakebase/<entity>_overlay.sql` | **templated** |
-| Synced Table (Continuous) config | `src/lakebase/<entity>_synced.json` | **templated** (BASE→`*_sync`) |
-| Grants (§4 of the impl plan) | `src/ddl/<entity>_grants.sql` | **templated** (identities) |
+| BASE table DDL (+CDF) | `src/core/ddl/<entity>_base.sql` | **templated** (column list) |
+| `*_app_changes` DDL (+CDF, full column set + control cols) | `src/core/ddl/<entity>_app_changes.sql` | **templated** |
+| GOLD MV (FULL OUTER, per-column COALESCE, computed exprs, tombstone filter) | `src/core/ddl/<entity>_gold.sql` | **templated** |
+| Lakebase `*_write` DDL | `src/core/lakebase/<entity>_write.sql` | **templated** (Postgres types) |
+| Lakebase overlay view (FULL OUTER) | `src/core/lakebase/<entity>_overlay.sql` | **templated** |
+| Synced Table (Continuous) config | `src/core/lakebase/<entity>_synced.json` | **templated** (BASE→`*_sync`) |
+| Grants (§4 of the impl plan) | `src/core/ddl/<entity>_grants.sql` | **templated** (identities) |
 | Per-entity **manifest** (table names, PK, editable/source col sets, lakebase conn) | `manifests/<entity>.json` | **templated** — drives the generic modules |
 | Job: apply-bridge (+ETL sim if seeded) | `resources/<entity>.job.yml` | **templated** (params → generic notebook) |
 | Pipeline (if `engine: sdp`) | `resources/<entity>.pipeline.yml` | **templated** |

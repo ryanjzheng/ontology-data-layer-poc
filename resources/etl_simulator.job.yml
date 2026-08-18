@@ -16,4 +16,4 @@ resources:
       tasks:
         - task_key: refresh_employee_base
           notebook_task:
-            notebook_path: ../src/notebooks/etl_simulator.py
+            notebook_path: ../src/demo/etl_simulator.py

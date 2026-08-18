@@ -33,15 +33,15 @@ def test_app_edit_and_revert_contract_is_limited_to_editable_properties() -> Non
 
 
 def test_overlay_contract_is_full_outer_and_tombstone_aware() -> None:
-    ddl = (ROOT / "src/lakebase/employee_overlay.sql").read_text().upper()
+    ddl = (ROOT / "src/core/lakebase/employee_overlay.sql").read_text().upper()
     assert "FULL OUTER JOIN" in ddl
     assert "IS_DELETED" in ddl
     assert "OBJECT_LAYER.EMPLOYEE_SYNC" in ddl
 
 
 def test_gold_contract_reconciles_without_mutating_base() -> None:
-    ddl = (ROOT / "src/ddl/employee_gold.sql").read_text().upper()
-    bridge = (ROOT / "src/notebooks/apply_bridge.py").read_text().upper()
+    ddl = (ROOT / "src/core/ddl/employee_gold.sql").read_text().upper()
+    bridge = (ROOT / "src/core/apply_bridge.py").read_text().upper()
     assert "FULL OUTER JOIN" in ddl
     assert "IS_HIGH_RISK" in ddl
     assert "MERGE INTO {TARGET}" in bridge
@@ -49,7 +49,7 @@ def test_gold_contract_reconciles_without_mutating_base() -> None:
 
 
 def test_upstream_trickle_is_bounded_and_writes_only_base() -> None:
-    notebook = (ROOT / "src/notebooks/etl_trickle.py").read_text()
+    notebook = (ROOT / "src/demo/etl_trickle.py").read_text()
     job = (ROOT / "resources/etl_trickle.job.yml").read_text()
     assert 'dbutils.widgets.text("interval_seconds", "5")' in notebook
     assert 'dbutils.widgets.text("batch_count", "4")' in notebook

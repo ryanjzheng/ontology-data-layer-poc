@@ -93,7 +93,7 @@ TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 **Done when:** table exists, `SHOW TBLPROPERTIES ontology_poc.object_layer.employee_base` shows CDF = true.
 
 ### Phase 0b — Upstream ETL simulator (skills: `databricks-data-generation`, `databricks-jobs`)
-Notebook `src/notebooks/etl_simulator.py` + a Job. Writes N synthetic employees to `employee_base`; **re-runnable** to mutate salaries of chosen rows (used to demo refresh resilience). Stamp a fresh `_etl_run_id`/`_etl_ts` each run. Parameterize row count + a "bump salaries for ids [...]" mode.
+Notebook `src/demo/etl_simulator.py` + a Job. Writes N synthetic employees to `employee_base`; **re-runnable** to mutate salaries of chosen rows (used to demo refresh resilience). Stamp a fresh `_etl_run_id`/`_etl_ts` each run. Parameterize row count + a "bump salaries for ids [...]" mode.
 **Done when:** first run populates BASE; a second run changes salary on a target row (verify via `SELECT` + CDF).
 
 ### Phase 0c — Lakebase instance + `*_sync` (skill: `databricks-lakebase`) — START FIRST
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS ontology_poc.object_layer.employee_app_changes (
 ) USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 ```
-Notebook `src/notebooks/apply_bridge.py` (Triggered Job, 1–2 min): read `employee_write` from Lakebase (JDBC or Lakebase SDK read), then:
+Notebook `src/core/apply_bridge.py` (Triggered Job, 1–2 min): read `employee_write` from Lakebase (JDBC or Lakebase SDK read), then:
 ```sql
 MERGE INTO ontology_poc.object_layer.employee_app_changes t
 USING _write_src s ON t.employee_id = s.employee_id
@@ -278,7 +278,7 @@ Use the Object Storage Lab UI and the ETL/bridge jobs to prove, in order:
 - **BI lag:** GOLD only reflects edits after each bridge run; the Lakebase overlay is immediate. Document the SLA.
 - **Computed props recompute on read** — `is_high_risk` lives only in GOLD; never persist it to BASE/edits.
 - **Serverless warehouse is stopped** — first GOLD query pays cold-start (fine for a POC).
-- **Lakebase + Synced Table + Postgres DDL are partly outside DABs** — keep those steps documented in `src/lakebase/`.
+- **Lakebase + Synced Table + Postgres DDL are partly outside DABs** — keep those steps documented in `src/core/lakebase/`.
 
 ## 9. Genuinely open (decide at implementation, with criteria)
 - **Lakebase instance size/region flags** — pick smallest available in the workspace's region; confirm exact flags from `databricks-lakebase`.
