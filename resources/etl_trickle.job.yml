@@ -1,0 +1,20 @@
+resources:
+  jobs:
+    etl_trickle:
+      name: "[${bundle.target}] ontology-poc upstream trickle"
+      max_concurrent_runs: 1
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: interval_seconds
+          default: "5"
+        - name: batch_count
+          default: "4"
+        - name: rows_per_batch
+          default: "2"
+      tasks:
+        - task_key: trickle_into_employee_base
+          notebook_task:
+            notebook_path: ../src/notebooks/etl_trickle.py

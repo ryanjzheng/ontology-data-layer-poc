@@ -46,3 +46,16 @@ def test_gold_contract_reconciles_without_mutating_base() -> None:
     assert "IS_HIGH_RISK" in ddl
     assert "MERGE INTO {TARGET}" in bridge
     assert "EMPLOYEE_BASE T" not in bridge
+
+
+def test_upstream_trickle_is_bounded_and_writes_only_base() -> None:
+    notebook = (ROOT / "src/notebooks/etl_trickle.py").read_text()
+    job = (ROOT / "resources/etl_trickle.job.yml").read_text()
+    assert 'dbutils.widgets.text("interval_seconds", "5")' in notebook
+    assert 'dbutils.widgets.text("batch_count", "4")' in notebook
+    assert 'dbutils.widgets.text("rows_per_batch", "2")' in notebook
+    assert 'saveAsTable(target)' in notebook
+    assert "employee_write" not in notebook
+    assert 'default: "5"' in job
+    assert 'default: "4"' in job
+    assert 'default: "2"' in job

@@ -31,4 +31,17 @@ Create, edit, revert, and delete objects only through the deployed
 Its AppKit routes live in
 `app/ontology-object-demo/server/routes/lakebase/employee-routes.ts`.
 
+## Live upstream trickle
+
+This manual job appends two new source-owned employees every five seconds for
+four batches. Its notebook runs for approximately 20 seconds after compute
+startup:
+
+```bash
+databricks bundle run etl_trickle -t dev --profile fevm-serverless
+```
+
+Refresh `employee_base` to see each Delta commit, then refresh the Object
+Storage Lab as the continuous Lakebase sync catches up.
+
 Run local checks with `uv run ruff check . && uv run pytest`.
